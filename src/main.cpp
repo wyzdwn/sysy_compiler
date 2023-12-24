@@ -32,7 +32,7 @@ main:
 int main(int argc, const char *argv[]) {
   assert(argc == 5);
   ofstream ofs(argv[4]);
-  ofs << generator[argv[1][1]];
+  // ofs << generator[argv[1][1]];
 
   // parse input file
   yyin = fopen(argv[2], "r");
@@ -46,6 +46,15 @@ int main(int argc, const char *argv[]) {
   ast->Dump();
   cout << endl;
 
+  // 将标准输出重定向到ofs
+  streambuf *cout_backup = cout.rdbuf(ofs.rdbuf());
 
+  // generate Koopa IR
+  ast->KoopaIR();
+  cout << endl;
+
+  // 恢复标准输出
+  cout.rdbuf(cout_backup);
+  
   return 0;
 }

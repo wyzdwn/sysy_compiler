@@ -9,6 +9,7 @@ class BaseAST {
   virtual ~BaseAST() = default;
 
   virtual void Dump() const = 0;
+  virtual void KoopaIR() const = 0;
 };
 
 class CompUnitAST : public BaseAST {
@@ -20,6 +21,9 @@ class CompUnitAST : public BaseAST {
     std::cout << "CompUnitAST { ";
     func_def->Dump();
     std::cout << " }";
+  }
+  void KoopaIR() const override {
+    func_def->KoopaIR();
   }
 };
 
@@ -36,6 +40,13 @@ class FuncDefAST : public BaseAST {
     block->Dump();
     std::cout << " }";
   }
+  void KoopaIR() const override {
+    std::cout << "fun @"<<ident<<"(): ";
+    func_type->KoopaIR();
+    std::cout << " {\n";
+    block->KoopaIR();
+    std::cout << "}";
+  }
 };
 
 class FuncTypeAST : public BaseAST {
@@ -44,6 +55,9 @@ class FuncTypeAST : public BaseAST {
 
   void Dump() const override {
     std::cout << "FuncDefAST { \"int\" }";
+  }
+  void KoopaIR() const override {
+    std::cout << type;
   }
 };
 
@@ -56,6 +70,10 @@ class BlockAST : public BaseAST {
     stmt->Dump();
     std::cout << " }";
   }
+  void KoopaIR() const override {
+    std::cout << "%entry:\n";
+    stmt->KoopaIR();
+  }
 };
 
 class StmtAST : public BaseAST {
@@ -67,6 +85,11 @@ class StmtAST : public BaseAST {
     number->Dump();
     std::cout << " }";
   }
+  void KoopaIR() const override {
+    std::cout << "  ret ";
+    number->KoopaIR();
+    std::cout << "\n";
+  }
 };
 
 class NumberAST : public BaseAST {
@@ -77,5 +100,8 @@ class NumberAST : public BaseAST {
     std::cout << "NumberAST { ";
     std::cout << n;
     std::cout << " }";
+  }
+  void KoopaIR() const override {
+    std::cout << n;
   }
 };
