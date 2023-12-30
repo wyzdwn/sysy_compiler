@@ -6,6 +6,7 @@
 #include "koopa.h"
 #include <string>
 #include <sstream>
+#include "visit_koopa_raw.hpp"
 
 using namespace std;
 
@@ -55,12 +56,13 @@ int main(int argc, const char *argv[]) {
   // 将标准输出重定向到ofs
   streambuf *cout_backup = cout.rdbuf(ss.rdbuf());;
 
+  
   // generate Koopa IR
   ast->KoopaIR();
   string str = ss.str();
+  cout.rdbuf(ofs.rdbuf());
   if(string(argv[1])=="-koopa")
   {
-    cout.rdbuf(ofs.rdbuf());
     cout << str;
   }
   else if(string(argv[1])=="-riscv")
@@ -76,6 +78,7 @@ int main(int argc, const char *argv[]) {
     koopa_delete_program(program);
 
     // 处理 raw program
+    Visit(raw);
     // ...
 
     // 处理完成, 释放 raw program builder 占用的内存
@@ -86,6 +89,6 @@ int main(int argc, const char *argv[]) {
 
   // 恢复标准输出
   cout.rdbuf(cout_backup);
-  
+  cout<<ss.str()<<endl;
   return 0;
 }
