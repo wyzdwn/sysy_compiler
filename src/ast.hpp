@@ -77,7 +77,13 @@ class BlockAST : public BaseAST {
   void KoopaIR() const override {
     std::cout << "%entry:\n";
     stmt->KoopaIR();
-    std::cout << "  ret %"<< current_id-1 << std::endl;
+    if(nums.empty())
+      std::cout << "  ret %"<< current_id-1 << std::endl;
+    else
+    {
+      std::cout << "  ret "<< nums.top() << std::endl;
+      nums.pop();
+    }
   }
 };
 
