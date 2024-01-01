@@ -3,29 +3,29 @@
 #include <iostream>
 #include <memory>
 #include <stack>
+#include <deque>
+#include <string>
 
 static int current_id = 0;
-static std::stack<int> nums;
+static std::deque<std::string> nums;
+
+inline void KoopaIR_one_operands(std::string op)
+{
+  std::cout << "  %"<< current_id << " = " << op <<" ";
+  std::cout << nums.back() << std::endl;
+  nums.pop_back();
+  nums.push_back("%"+std::to_string(current_id));
+  current_id++;
+}
+
 
 inline void KoopaIR_two_operands(std::string op)
 {
-  if(nums.empty()){
-    std::cout << "  %"<< current_id << " = " << op <<" ";
-    std::cout << "%" << current_id-2 << ", ";
-    std::cout << "%" << current_id-1 << std::endl;
-  }
-  else{
-    std::cout << "  %"<< current_id <<" = "<< op <<" ";
-    std::cout << nums.top() << ", ";
-    nums.pop();
-    if(nums.empty())
-      std::cout << "%" << current_id-1 << std::endl;
-    else
-    {
-      std::cout << nums.top() << std::endl;
-      nums.pop();
-    }
-  }
+  std::cout << "  %"<< current_id << " = " << op <<" ";
+  std::cout << nums[nums.size()-2] << ", "<< nums.back() << std::endl;
+  nums.pop_back();
+  nums.pop_back();
+  nums.push_back("%"+std::to_string(current_id));
   current_id++;
 }
 // 所有 AST 的基类
@@ -102,8 +102,8 @@ class BlockAST : public BaseAST {
       std::cout << "  ret %"<< current_id-1 << std::endl;
     else
     {
-      std::cout << "  ret "<< nums.top() << std::endl;
-      nums.pop();
+      std::cout << "  ret "<< nums.back() << std::endl;
+      nums.pop_back();
     }
   }
 };
@@ -185,30 +185,10 @@ class UnaryExpAST : public BaseAST {
       switch(unary_op)
       {
         case '-':
-          if(nums.empty()){
-            std::cout << "  %"<< current_id <<" = sub 0, %";
-            std::cout << current_id-1 << std::endl;
-            current_id++;
-          }
-          else{
-            std::cout << "  %"<< current_id <<" = sub 0, ";
-            std::cout << nums.top() << std::endl;
-            current_id++;
-            nums.pop();
-          }
+          KoopaIR_one_operands("sub 0,");
           break;
         case '!':
-          if(nums.empty()){
-            std::cout << "  %"<< current_id <<" = eq %";
-            std::cout << current_id-1 << ", 0" << std::endl;
-            current_id++;
-          }
-          else{
-            std::cout << "  %"<< current_id <<" = eq ";
-            std::cout << nums.top() << ", 0" << std::endl;
-            current_id++;
-            nums.pop();
-          }
+          KoopaIR_one_operands("eq 0,");
           break;
       }
     }
@@ -225,7 +205,7 @@ class NumberAST : public BaseAST {
     std::cout << " }";
   }
   void KoopaIR() const override {
-    nums.push(n);
+    nums.push_back(std::to_string(n));
   }
 };
 
