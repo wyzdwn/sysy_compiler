@@ -16,7 +16,7 @@ static std::unordered_map<char, std::string> CalOp2Instruct={
   {'-', "sub"},
   {'*', "mul"},
   {'/', "div"},
-  {'%', "rem"},
+  {'%', "mod"},
 };
 // 用于比较的操作符到 Koopa IR 指令的映射
 static std::unordered_map<std::string, std::string> ComOp2Instruct={
@@ -47,8 +47,19 @@ inline void KoopaIR_two_operands(std::string instruct)
 }
 inline void KoopaIR_logic_operands(std::string instruct)
 {
-  KoopaIR_two_operands(instruct);
-  KoopaIR_one_operands("ne 0,");
+  if(instruct=="and"){
+    std::cout << "  %"<< current_id++ << " = ne 0, " << nums[nums.size()-2] << std::endl;
+    std::cout << "  %"<< current_id++ << " = ne 0, " << nums.back() << std::endl;
+    nums.pop_back();
+    nums.pop_back();
+    nums.push_back("%"+std::to_string(current_id-2));
+    nums.push_back("%"+std::to_string(current_id-1));
+    KoopaIR_two_operands("and");
+  }
+  else{
+    KoopaIR_two_operands("or");
+    KoopaIR_one_operands("ne 0,");
+  }
 }
 
 // 所有 AST 的基类
