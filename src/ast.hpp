@@ -7,6 +7,27 @@
 static int current_id = 0;
 static std::stack<int> nums;
 
+inline void KoopaIR_two_operands(std::string op)
+{
+  if(nums.empty()){
+    std::cout << "  %"<< current_id << " = " << op <<" ";
+    std::cout << "%" << current_id-2 << ", ";
+    std::cout << "%" << current_id-1 << std::endl;
+  }
+  else{
+    std::cout << "  %"<< current_id <<" = "<< op <<" ";
+    std::cout << nums.top() << ", ";
+    nums.pop();
+    if(nums.empty())
+      std::cout << "%" << current_id-1 << std::endl;
+    else
+    {
+      std::cout << nums.top() << std::endl;
+      nums.pop();
+    }
+  }
+  current_id++;
+}
 // 所有 AST 的基类
 class BaseAST {
  public:
@@ -103,15 +124,15 @@ class StmtAST : public BaseAST {
 
 class ExpAST : public BaseAST {
  public:
-  std::unique_ptr<BaseAST> unary_exp;
+  std::unique_ptr<BaseAST> add_exp;
 
   void Dump() const override {
     std::cout << "EXPAST { ";
-    unary_exp->Dump();
+    add_exp->Dump();
     std::cout << " }";
   }
   void KoopaIR() const override {
-    unary_exp->KoopaIR();
+    add_exp->KoopaIR();
   }
 };
 
@@ -194,20 +215,6 @@ class UnaryExpAST : public BaseAST {
   }
 };
 
-class UnaryOpAST : public BaseAST {
- public:
-  char op;
-
-  void Dump() const override {
-    std::cout << "UnaryOpAST { ";
-    std::cout << op;
-    std::cout << " }";
-  }
-  void KoopaIR() const override {
-    std::cout << op;
-  }
-};
-
 class NumberAST : public BaseAST {
  public:
   std::int32_t n;
@@ -220,4 +227,79 @@ class NumberAST : public BaseAST {
   void KoopaIR() const override {
     nums.push(n);
   }
+};
+
+class AddExpAST : public BaseAST {
+ public:
+  std::unique_ptr<BaseAST> add_exp;
+  std::unique_ptr<BaseAST> mul_exp;
+  char add_op;
+
+  void Dump() const override {
+    std::cout << "AddExpAST { ";
+    if (add_exp) {
+      add_exp->Dump();
+      std::cout << add_op;
+      mul_exp->Dump();
+    } else {
+      mul_exp->Dump();
+    }
+    std::cout << " }";
+  }
+  void KoopaIR() const override {
+    if (add_exp) {
+      add_exp->KoopaIR();
+      mul_exp->KoopaIR();
+      switch(add_op)
+      {
+        case '+':
+          KoopaIR_two_operands("add");
+          break;
+        case '-':
+          KoopaIR_two_operands("sub");
+          break;
+      }
+    } else {
+      mul_exp->KoopaIR();
+    }
+  }
+};
+
+class MulExpAST: public BaseAST{
+  public:
+    std::unique_ptr<BaseAST> mul_exp;
+    std::unique_ptr<BaseAST> unary_exp;
+    char mul_op;
+  
+    void Dump() const override {
+      std::cout << "MulExpAST { ";
+      if (mul_exp) {
+        mul_exp->Dump();
+        std::cout << mul_op;
+        unary_exp->Dump();
+      } else {
+        unary_exp->Dump();
+      }
+      std::cout << " }";
+    }
+    void KoopaIR() const override {
+      if (mul_exp) {
+        mul_exp->KoopaIR();
+        unary_exp->KoopaIR();
+        switch(mul_op)
+        {
+          case '*':
+            KoopaIR_two_operands("mul");
+            break;
+          case '/':
+            KoopaIR_two_operands("div");
+            break;
+          case '%':
+            KoopaIR_two_operands("rem");
+            break;
+        }
+      } else {
+        unary_exp->KoopaIR();
+      }
+    }
 };
