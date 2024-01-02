@@ -13,7 +13,7 @@ using namespace std;
 static int current_id = 0;
 static deque<string> nums;
 static unordered_map<string, int> symbol_table;
-static int assign_lval_flag = 0;
+static unordered_map<string, string> symbol_type;
 
 // 用于计算的操作符到 Koopa IR 指令的映射
 static unordered_map<char, string> CalOp2Instruct={
@@ -135,6 +135,30 @@ class FuncTypeAST : public BaseAST {
   }
 };
 
+class LValAST: public BaseAST{
+  public:
+    string ident;
+
+    void Dump() const override {
+      cout << "LVal { ";
+      cout << ident;
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      if(symbol_type[ident]=="const"){
+        nums.push_back(to_string(symbol_table[ident]));
+      }
+      else{
+        cout << "  %"<< current_id << " = load @" << ident << endl;
+        nums.push_back("%"+to_string(current_id));
+        current_id++;
+      }
+    }
+    int Calculate() const override {
+      return symbol_table[ident];
+    }
+};
+
 class BlockAST : public BaseAST {
  public:
   unique_ptr<vector<unique_ptr<BaseAST>>> block_item_list;
@@ -212,13 +236,9 @@ class StmtAST : public BaseAST {
       nums.pop_back();
     }
     else{
-      // 将计算的结果push到nums中，然后在lval->KoopaIR()中进行赋值
-      // lval->KoopaIR()还需要承担输出的作用，所以设置assign_lval_flag，以辨别是赋值还是输出
-      // 需要防止数据的错乱，所以赋值后需要把计算结果pop出nums
-      nums.push_back(to_string(exp->Calculate()));
-      assign_lval_flag=1;
-      lval->KoopaIR();
-      assign_lval_flag=0;
+      exp->KoopaIR();
+      std::cout << "  store " << nums.back() << ", @";
+      std::cout << dynamic_cast<LValAST*>(lval.get())->ident << std::endl;
       nums.pop_back();
     }
   }
@@ -679,6 +699,7 @@ class ConstDefAST: public BaseAST{
     }
     void KoopaIR() const override {
       symbol_table[ident] = const_init_val->Calculate();
+      symbol_type[ident] = "const";
     }
     int Calculate() const override {
       return 0;
@@ -759,12 +780,14 @@ class VarDefAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      if(init_val){
+      cout << "  @" << ident << " = alloc i32" << endl;
+      symbol_table[ident] = 0;
+      symbol_type[ident] = "var";
+      if(init_val) {
         init_val->KoopaIR();
-        symbol_table[ident] = init_val->Calculate();
-      }
-      else{
-        symbol_table[ident] = 0;
+        cout << "  store " << nums.back() << ", @" << ident << endl;
+        symbol_table[ident] = stoi(nums.back());
+        nums.pop_back();
       }
     }
     int Calculate() const override {
@@ -788,35 +811,3 @@ class InitValAST: public BaseAST{
       return exp->Calculate();
     }
 };
-
-class LValAST: public BaseAST{
-  public:
-    string ident;
-
-    void Dump() const override {
-      cout << "LVal { ";
-      cout << ident;
-      cout << " }";
-    }
-    void KoopaIR() const override {
-      if(assign_lval_flag)
-      {
-        symbol_table[ident] = stoi(nums.back());
-        return ;
-      }
-      if(symbol_table.find(ident)==symbol_table.end()){
-        // 抛出错误，使用了未定义的ident
-        throw runtime_error("Error: use undefined ident");
-      }
-      int val = symbol_table[ident];
-      nums.push_back(to_string(val));
-    }
-    int Calculate() const override {
-      if(symbol_table.find(ident)==symbol_table.end()){
-        // 抛出错误，使用了未定义的ident
-        throw runtime_error("Error: use undefined ident");
-      }
-      return symbol_table[ident];
-    }
-};
-
