@@ -6,12 +6,16 @@
 #include <deque>
 #include <string>
 #include <unordered_map>
+#include <vector>
+
+using namespace std;
 
 static int current_id = 0;
-static std::deque<std::string> nums;
+static deque<string> nums;
+static unordered_map<string, int> symbol_table;
 
 // 用于计算的操作符到 Koopa IR 指令的映射
-static std::unordered_map<char, std::string> CalOp2Instruct={
+static unordered_map<char, string> CalOp2Instruct={
   {'+', "add"},
   {'-', "sub"},
   {'*', "mul"},
@@ -19,7 +23,7 @@ static std::unordered_map<char, std::string> CalOp2Instruct={
   {'%', "mod"},
 };
 // 用于比较的操作符到 Koopa IR 指令的映射
-static std::unordered_map<std::string, std::string> ComOp2Instruct={
+static unordered_map<string, string> ComOp2Instruct={
   {"<", "lt"},
   {">", "gt"},
   {"<=", "le"},
@@ -28,32 +32,32 @@ static std::unordered_map<std::string, std::string> ComOp2Instruct={
   {"!=", "ne"},
 };
 
-inline void KoopaIR_one_operands(std::string instruct)
+inline void KoopaIR_one_operands(string instruct)
 {
-  std::cout << "  %"<< current_id << " = " << instruct <<" ";
-  std::cout << nums.back() << std::endl;
+  cout << "  %"<< current_id << " = " << instruct <<" ";
+  cout << nums.back() << endl;
   nums.pop_back();
-  nums.push_back("%"+std::to_string(current_id));
+  nums.push_back("%"+to_string(current_id));
   current_id++;
 }
-inline void KoopaIR_two_operands(std::string instruct)
+inline void KoopaIR_two_operands(string instruct)
 {
-  std::cout << "  %"<< current_id << " = " << instruct <<" ";
-  std::cout << nums[nums.size()-2] << ", "<< nums.back() << std::endl;
+  cout << "  %"<< current_id << " = " << instruct <<" ";
+  cout << nums[nums.size()-2] << ", "<< nums.back() << endl;
   nums.pop_back();
   nums.pop_back();
-  nums.push_back("%"+std::to_string(current_id));
+  nums.push_back("%"+to_string(current_id));
   current_id++;
 }
-inline void KoopaIR_logic_operands(std::string instruct)
+inline void KoopaIR_logic_operands(string instruct)
 {
   if(instruct=="and"){
-    std::cout << "  %"<< current_id++ << " = ne 0, " << nums[nums.size()-2] << std::endl;
-    std::cout << "  %"<< current_id++ << " = ne 0, " << nums.back() << std::endl;
+    cout << "  %"<< current_id++ << " = ne 0, " << nums[nums.size()-2] << endl;
+    cout << "  %"<< current_id++ << " = ne 0, " << nums.back() << endl;
     nums.pop_back();
     nums.pop_back();
-    nums.push_back("%"+std::to_string(current_id-2));
-    nums.push_back("%"+std::to_string(current_id-1));
+    nums.push_back("%"+to_string(current_id-2));
+    nums.push_back("%"+to_string(current_id-1));
     KoopaIR_two_operands("and");
   }
   else{
@@ -69,147 +73,209 @@ class BaseAST {
 
   virtual void Dump() const = 0;
   virtual void KoopaIR() const = 0;
+  virtual int Calculate() const = 0;
 };
 
 class CompUnitAST : public BaseAST {
  public:
   // 用智能指针管理对象
-  std::unique_ptr<BaseAST> func_def;
+  unique_ptr<BaseAST> func_def;
 
   void Dump() const override {
-    std::cout << "CompUnitAST { ";
+    cout << "CompUnitAST { ";
     func_def->Dump();
-    std::cout << " }";
+    cout << " }";
   }
   void KoopaIR() const override {
     func_def->KoopaIR();
+  }
+  int Calculate() const override {
+    return 0;
   }
 };
 
 class FuncDefAST : public BaseAST {
  public:
-  std::unique_ptr<BaseAST> func_type;
-  std::string ident;
-  std::unique_ptr<BaseAST> block;
+  unique_ptr<BaseAST> func_type;
+  string ident;
+  unique_ptr<BaseAST> block;
 
   void Dump() const override {
-    std::cout << "FuncDefAST { ";
+    cout << "FuncDefAST { ";
     func_type->Dump();
-    std::cout << ", " << ident << ", ";
+    cout << ", " << ident << ", ";
     block->Dump();
-    std::cout << " }";
+    cout << " }";
   }
   void KoopaIR() const override {
-    std::cout << "fun @"<<ident<<"(): ";
+    cout << "fun @"<<ident<<"(): ";
     func_type->KoopaIR();
-    std::cout << " {\n";
+    cout << " {\n";
     block->KoopaIR();
-    std::cout << "}";
+    cout << "}";
+  }
+  int Calculate() const override {
+    return 0;
   }
 };
 
 class FuncTypeAST : public BaseAST {
  public:
-  std::string type;
+  string type;
 
   void Dump() const override {
-    std::cout << "FuncDefAST { \"int\" }";
+    cout << "FuncDefAST { \"int\" }";
   }
   void KoopaIR() const override {
-    std::cout << type;
+    cout << type;
+  }
+  int Calculate() const override {
+    return 0;
   }
 };
 
 class BlockAST : public BaseAST {
  public:
-  std::unique_ptr<BaseAST> stmt;
+  unique_ptr<vector<unique_ptr<BaseAST>>> block_item_list;
 
   void Dump() const override {
-    std::cout << "BlockAST { ";
-    stmt->Dump();
-    std::cout << " }";
+    cout << "Block { ";
+    for(auto &i:*block_item_list){
+      i->Dump();
+      cout << ", ";
+    }
+    cout << " }";
   }
   void KoopaIR() const override {
-    std::cout << "%entry:\n";
-    stmt->KoopaIR();
-    if(nums.empty())
-      std::cout << "  ret %"<< current_id-1 << std::endl;
-    else
-    {
-      std::cout << "  ret "<< nums.back() << std::endl;
-      nums.pop_back();
+    for(auto &i:*block_item_list){
+      i->KoopaIR();
     }
   }
+  int Calculate() const override {
+    return 0;
+  }
+};
+
+class BlockItemAST: public BaseAST{
+  public:
+    unique_ptr<BaseAST> stmt;
+    unique_ptr<BaseAST> decl;
+
+    void Dump() const override {
+      cout << "BlockItem { ";
+      if(stmt){
+        stmt->Dump();
+        cout << ", ";
+      }
+      if(decl){
+        decl->Dump();
+        cout << ", ";
+      }
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      if(stmt){
+        cout << "%entry:\n";
+        stmt->KoopaIR();
+        cout << "  ret "<< nums.back() << endl;
+        nums.pop_back();
+      }
+      if(decl){
+        decl->KoopaIR();
+      }
+      
+    }
+    int Calculate() const override {
+      return 0;
+    }
 };
 
 class StmtAST : public BaseAST {
  public:
-  std::unique_ptr<BaseAST> Exp;
+  unique_ptr<BaseAST> Exp;
 
   void Dump() const override {
-    std::cout << "StmtAST { ";
+    cout << "StmtAST { ";
     Exp->Dump();
-    std::cout << " }";
+    cout << " }";
   }
   void KoopaIR() const override {
     Exp->KoopaIR();
+  }
+  int Calculate() const override {
+    return 0;
   }
 };
 
 class ExpAST : public BaseAST {
  public:
-  std::unique_ptr<BaseAST> add_exp;
+  unique_ptr<BaseAST> lor_exp;
 
   void Dump() const override {
-    std::cout << "EXPAST { ";
-    add_exp->Dump();
-    std::cout << " }";
+    cout << "EXPAST { ";
+    lor_exp->Dump();
+    cout << " }";
   }
   void KoopaIR() const override {
-    add_exp->KoopaIR();
+    lor_exp->KoopaIR();
+  }
+  int Calculate() const override {
+    return lor_exp->Calculate();
   }
 };
 
 class PrimaryExpAST : public BaseAST {
  public:
-  std::unique_ptr<BaseAST> exp;
-  std::unique_ptr<BaseAST> number;
+  unique_ptr<BaseAST> exp;
+  unique_ptr<BaseAST> number;
+  unique_ptr<BaseAST> lval;
 
   void Dump() const override {
-    std::cout << "PrimaryExpAST { ";
+    cout << "PrimaryExpAST { ";
     if (exp) {
-      std::cout<<"(";
       exp->Dump();
-      std::cout<<")";
-    } else {
+    } else if (number) {
       number->Dump();
+    } else {
+      lval->Dump();
     }
-    std::cout << " }";
+    cout << " }";
   }
   void KoopaIR() const override {
     if (exp) {
       exp->KoopaIR();
-    } else {
+    } else if (number) {
       number->KoopaIR();
+    } else {
+      lval->KoopaIR();
+    }
+  }
+  int Calculate() const override {
+    if (exp) {
+      return exp->Calculate();
+    } else if (number) {
+      return number->Calculate();
+    } else {
+      return lval->Calculate();
     }
   }
 };
 
 class UnaryExpAST : public BaseAST {
  public:
-  std::unique_ptr<BaseAST> primary_exp;
+  unique_ptr<BaseAST> primary_exp;
   char unary_op;
-  std::unique_ptr<BaseAST> unary_exp;
+  unique_ptr<BaseAST> unary_exp;
 
   void Dump() const override {
-    std::cout << "UnaryExpAST { ";
+    cout << "UnaryExpAST { ";
     if (primary_exp) {
       primary_exp->Dump();
     } else {
-      std::cout << unary_op;
+      cout << unary_op;
       unary_exp->Dump();
     }
-    std::cout << " }";
+    cout << " }";
   }
   void KoopaIR() const override {
     if (primary_exp) {
@@ -227,38 +293,58 @@ class UnaryExpAST : public BaseAST {
       }
     }
   }
+  int Calculate() const override {
+    if(primary_exp){
+      return primary_exp->Calculate();
+    }
+    else{
+      switch(unary_op)
+      {
+        case '-':
+          return -unary_exp->Calculate();
+        case '!':
+          return !unary_exp->Calculate();
+        case '+':
+          return unary_exp->Calculate();
+      }
+    }
+    return 0;
+  }
 };
 
 class NumberAST : public BaseAST {
  public:
-  std::int32_t n;
+  int32_t n;
 
   void Dump() const override {
-    std::cout << "NumberAST { ";
-    std::cout << n;
-    std::cout << " }";
+    cout << "NumberAST { ";
+    cout << n;
+    cout << " }";
   }
   void KoopaIR() const override {
-    nums.push_back(std::to_string(n));
+    nums.push_back(to_string(n));
+  }
+  int Calculate() const override {
+    return n;
   }
 };
 
 class AddExpAST : public BaseAST {
  public:
-  std::unique_ptr<BaseAST> add_exp;
-  std::unique_ptr<BaseAST> mul_exp;
+  unique_ptr<BaseAST> add_exp;
+  unique_ptr<BaseAST> mul_exp;
   char add_op;
 
   void Dump() const override {
-    std::cout << "AddExpAST { ";
+    cout << "AddExpAST { ";
     if (add_exp) {
       add_exp->Dump();
-      std::cout << add_op;
+      cout << add_op;
       mul_exp->Dump();
     } else {
       mul_exp->Dump();
     }
-    std::cout << " }";
+    cout << " }";
   }
   void KoopaIR() const override {
     if (add_exp) {
@@ -269,24 +355,37 @@ class AddExpAST : public BaseAST {
       mul_exp->KoopaIR();
     }
   }
+  int Calculate() const override {
+    if(add_exp){
+      if(add_op=='+'){
+        return add_exp->Calculate() + mul_exp->Calculate();
+      }
+      else{
+        return add_exp->Calculate() - mul_exp->Calculate();
+      }
+    }
+    else{
+      return mul_exp->Calculate();
+    }
+  }
 };
 
 class MulExpAST: public BaseAST{
   public:
-    std::unique_ptr<BaseAST> mul_exp;
-    std::unique_ptr<BaseAST> unary_exp;
+    unique_ptr<BaseAST> mul_exp;
+    unique_ptr<BaseAST> unary_exp;
     char mul_op;
   
     void Dump() const override {
-      std::cout << "MulExpAST { ";
+      cout << "MulExpAST { ";
       if (mul_exp) {
         mul_exp->Dump();
-        std::cout << mul_op;
+        cout << mul_op;
         unary_exp->Dump();
       } else {
         unary_exp->Dump();
       }
-      std::cout << " }";
+      cout << " }";
     }
     void KoopaIR() const override {
       if (mul_exp) {
@@ -297,23 +396,39 @@ class MulExpAST: public BaseAST{
         unary_exp->KoopaIR();
       }
     }
+    int Calculate() const override {
+      if(mul_exp){
+        if(mul_op=='*'){
+          return mul_exp->Calculate() * unary_exp->Calculate();
+        }
+        else if(mul_op=='/'){
+          return mul_exp->Calculate() / unary_exp->Calculate();
+        }
+        else{
+          return mul_exp->Calculate() % unary_exp->Calculate();
+        }
+      }
+      else{
+        return unary_exp->Calculate();
+      }
+    }
 };
 
 class LOrExpAST: public BaseAST{
   public:
-    std::unique_ptr<BaseAST> lor_exp;
-    std::unique_ptr<BaseAST> land_exp;
+    unique_ptr<BaseAST> lor_exp;
+    unique_ptr<BaseAST> land_exp;
 
     void Dump() const override {
-      std::cout << "LOrExp { ";
+      cout << "LOrExp { ";
       if (lor_exp) {
         lor_exp->Dump();
-        std::cout << "||";
+        cout << "||";
         land_exp->Dump();
       } else {
         land_exp->Dump();
       }
-      std::cout << " }";
+      cout << " }";
     }
     void KoopaIR() const override {
       if (lor_exp) {
@@ -324,23 +439,31 @@ class LOrExpAST: public BaseAST{
         land_exp->KoopaIR();
       }
     }
+    int Calculate() const override {
+      if(lor_exp){
+        return lor_exp->Calculate() || land_exp->Calculate();
+      }
+      else{
+        return land_exp->Calculate();
+      }
+    }
 };
 
 class LAndExpAST: public BaseAST{
   public:
-    std::unique_ptr<BaseAST> land_exp;
-    std::unique_ptr<BaseAST> eq_exp;
+    unique_ptr<BaseAST> land_exp;
+    unique_ptr<BaseAST> eq_exp;
 
     void Dump() const override {
-      std::cout << "LAndExp { ";
+      cout << "LAndExp { ";
       if (land_exp) {
         land_exp->Dump();
-        std::cout << "&&";
+        cout << "&&";
         eq_exp->Dump();
       } else {
         eq_exp->Dump();
       }
-      std::cout << " }";
+      cout << " }";
     }
     void KoopaIR() const override {
       if (land_exp) {
@@ -351,24 +474,32 @@ class LAndExpAST: public BaseAST{
         eq_exp->KoopaIR();
       }
     }
+    int Calculate() const override {
+      if(land_exp){
+        return land_exp->Calculate() && eq_exp->Calculate();
+      }
+      else{
+        return eq_exp->Calculate();
+      }
+    }
 };
 
 class EqExpAST: public BaseAST{
   public:
-    std::unique_ptr<BaseAST> eq_exp;
-    std::unique_ptr<BaseAST> rel_exp;
-    std::string eq_op;
+    unique_ptr<BaseAST> eq_exp;
+    unique_ptr<BaseAST> rel_exp;
+    string eq_op;
 
     void Dump() const override {
-      std::cout << "EqExp { ";
+      cout << "EqExp { ";
       if (eq_exp) {
         eq_exp->Dump();
-        std::cout << eq_op;
+        cout << eq_op;
         rel_exp->Dump();
       } else {
         rel_exp->Dump();
       }
-      std::cout << " }";
+      cout << " }";
     }
     void KoopaIR() const override {
       if (eq_exp) {
@@ -379,24 +510,37 @@ class EqExpAST: public BaseAST{
         rel_exp->KoopaIR();
       }
     }
+    int Calculate() const override {
+      if(eq_exp){
+        if(eq_op=="=="){
+          return eq_exp->Calculate() == rel_exp->Calculate();
+        }
+        else{
+          return eq_exp->Calculate() != rel_exp->Calculate();
+        }
+      }
+      else{
+        return rel_exp->Calculate();
+      }
+    }
 };
 
 class RelExpAST: public BaseAST{
   public:
-    std::unique_ptr<BaseAST> rel_exp;
-    std::unique_ptr<BaseAST> add_exp;
-    std::string rel_op;
+    unique_ptr<BaseAST> rel_exp;
+    unique_ptr<BaseAST> add_exp;
+    string rel_op;
 
     void Dump() const override {
-      std::cout << "RelExp { ";
+      cout << "RelExp { ";
       if (rel_exp) {
         rel_exp->Dump();
-        std::cout << rel_op;
+        cout << rel_op;
         add_exp->Dump();
       } else {
         add_exp->Dump();
       }
-      std::cout << " }";
+      cout << " }";
     }
     void KoopaIR() const override {
       if (rel_exp) {
@@ -407,4 +551,164 @@ class RelExpAST: public BaseAST{
         add_exp->KoopaIR();
       }
     }
+    int Calculate() const override {
+      if(rel_exp){
+        if(rel_op=="<"){
+          return rel_exp->Calculate() < add_exp->Calculate();
+        }
+        else if(rel_op==">"){
+          return rel_exp->Calculate() > add_exp->Calculate();
+        }
+        else if(rel_op=="<="){
+          return rel_exp->Calculate() <= add_exp->Calculate();
+        }
+        else{
+          return rel_exp->Calculate() >= add_exp->Calculate();
+        }
+      }
+      else{
+        return add_exp->Calculate();
+      }
+    }
 };
+
+// lv4 start
+class DeclAST: public BaseAST{
+  public:
+    unique_ptr<BaseAST> const_decl;
+
+    void Dump() const override {
+      cout << "Decl { ";
+      const_decl->Dump();
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      const_decl->KoopaIR();
+    }
+    int Calculate() const override {
+      return 0;
+    }
+};
+
+class ConstDeclAST: public BaseAST{
+  public:
+    unique_ptr<BaseAST> b_type;
+    unique_ptr<vector<unique_ptr<BaseAST>>> const_def_list;
+
+    void Dump() const override {
+      cout << "ConstDecl { ";
+      b_type->Dump();
+      cout << ", ";
+      for(auto &i:*const_def_list){
+        i->Dump();
+        cout << ", ";
+      }
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      for(auto &i:*const_def_list){
+        i->KoopaIR();
+      }
+    }
+    int Calculate() const override {
+      return 0;
+    }
+};
+
+class BTypeAST: public BaseAST{
+  public:
+    string type;
+
+    void Dump() const override {
+      cout << "BType { ";
+      cout << type;
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      // cout << type;
+    }
+    int Calculate() const override {
+      return 0;
+    }
+};
+
+class ConstDefAST: public BaseAST{
+  public:
+    string ident;
+    unique_ptr<BaseAST> const_init_val;
+
+    void Dump() const override {
+      cout << "ConstDef { ";
+      cout << ident;
+      cout << ", ";
+      const_init_val->Dump();
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      symbol_table[ident] = const_init_val->Calculate();
+    }
+    int Calculate() const override {
+      return 0;
+    }
+};
+
+class ConstInitValAST: public BaseAST{
+  public:
+    unique_ptr<BaseAST> const_exp;
+
+    void Dump() const override {
+      cout << "ConstInitVal { ";
+      const_exp->Dump();
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      // const_exp->KoopaIR();
+    }
+    int Calculate() const override {
+      return const_exp->Calculate();
+    }
+};
+
+class ConstExpAST: public BaseAST{
+  public:
+    unique_ptr<BaseAST> exp;
+
+    void Dump() const override {
+      cout << "ConstExp { ";
+      exp->Dump();
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      exp->KoopaIR();
+    }
+    int Calculate() const override {
+      return exp->Calculate();
+    }
+};
+
+class LValAST: public BaseAST{
+  public:
+    string ident;
+
+    void Dump() const override {
+      cout << "LVal { ";
+      cout << ident;
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      if(symbol_table.find(ident)==symbol_table.end()){
+        // 抛出错误，使用了未定义的ident
+        throw runtime_error("Error: use undefined ident");
+      }
+      int val = symbol_table[ident];
+      nums.push_back(to_string(val));
+    }
+    int Calculate() const override {
+      if(symbol_table.find(ident)==symbol_table.end()){
+        // 抛出错误，使用了未定义的ident
+        throw runtime_error("Error: use undefined ident");
+      }
+      return symbol_table[ident];
+    }
+};
+

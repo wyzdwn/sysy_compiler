@@ -42,6 +42,7 @@ EqOp          [!=]=
 "return"        { return RETURN; }
 "&&"            { return AND; }
 "||"            { return OR; }
+"const"         { return CONST;}
 
 {Identifier}    { yylval.str_val = new string(yytext); return IDENT; }
 
