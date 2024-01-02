@@ -786,7 +786,6 @@ class VarDefAST: public BaseAST{
       if(init_val) {
         init_val->KoopaIR();
         cout << "  store " << nums.back() << ", @" << ident << endl;
-        symbol_table[ident] = stoi(nums.back());
         nums.pop_back();
       }
     }
