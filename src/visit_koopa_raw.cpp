@@ -27,36 +27,59 @@ unordered_map<int, string> binary_op_map={
 };
 
 static deque <string> nums; 
-static int current_reg=0; // 可以比下面的num_regs大，但是要模上num_regs
 const deque<string> regs=\
 {"t0", "t1", "t2", "t3", "t4", "t5", "t6", \
  "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",};
 const int num_regs=regs.size();
+unordered_map<string, int> reg_used; // 记录每个寄存器是否被使用过，1表示被使用过，0表示没被使用过
+
+// 返回没被使用过的第一个寄存器
+inline string get_reg()
+{
+  for(int i=0; i<num_regs; i++)
+    if(reg_used[regs[i]] == 0)
+    {
+      reg_used[regs[i]] = 1;
+      return regs[i];
+    }
+  assert(false);
+}
+
+inline void free_reg()
+{
+  string reg = nums.back();
+  nums.pop_back();
+  reg_used[reg] = 0;
+}
 
 // 给定riscv的运算符（op），以及koopaIR的两个操作数（lhs, rhs），生成对应的汇编代码
 inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, string op)
 {
+  string target_reg;
   if(lhs->kind.tag == KOOPA_RVT_INTEGER && rhs->kind.tag == KOOPA_RVT_INTEGER){
     Visit(lhs);
     Visit(rhs);
+    target_reg = get_reg();
     // 用两个操作数对应的两个寄存器中一个来存结果，这里选择最先进入nums的那个，这样只需进行一次pop_back
-    cout<<"  "<<op<<" "<<regs[current_reg]<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
+    cout<<"  "<<op<<" "<<target_reg<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
   }
   else if(lhs->kind.tag == KOOPA_RVT_INTEGER){
     Visit(lhs);
-    cout<<"  "<<op<<" "<<regs[current_reg]<<", "<<nums.back()<<", "<<nums[nums.size()-2]<<endl;
+    target_reg = get_reg();
+    cout<<"  "<<op<<" "<<target_reg<<", "<<nums.back()<<", "<<nums[nums.size()-2]<<endl;
   }
   else if(rhs->kind.tag == KOOPA_RVT_INTEGER){
     Visit(rhs);
-    cout<<"  "<<op<<" "<<regs[current_reg]<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
+    target_reg = get_reg();
+    cout<<"  "<<op<<" "<<target_reg<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
   }
   else{
-    cout<<"  "<<op<<" "<<regs[current_reg]<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
+    target_reg = get_reg();
+    cout<<"  "<<op<<" "<<target_reg<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
   }
-  nums.pop_back();
-  nums.pop_back();
-  nums.push_back(regs[current_reg]);
-  current_reg=(current_reg+1)%num_regs;
+  free_reg();
+  free_reg();
+  nums.push_back(target_reg);
 }
 
 
@@ -64,6 +87,7 @@ inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, st
 void Visit(const koopa_raw_program_t &program) {
   // 执行一些其他的必要操作
   // ...
+  for(int i=0; i<num_regs; i++) reg_used[regs[i]] = 0;
   // 访问所有全局变量
   cout<<"  .text"<<endl;
   Visit(program.values);
@@ -143,7 +167,7 @@ void Visit(const koopa_raw_return_t &ret) {
   // 访问返回值
   if(ret.value->kind.tag == KOOPA_RVT_INTEGER) Visit(ret.value);
   cout<<"  mv a0, "<<nums.back()<<endl;
-  nums.pop_back();
+  free_reg();
   cout<<"  ret";
 }
 
@@ -156,9 +180,9 @@ void Visit(const koopa_raw_integer_t &integer) {
     nums.push_back("x0");
     return;
   }
-  cout<<"  li "<<regs[current_reg]<<", "<<integer.value<<endl;
-  nums.push_back(regs[current_reg]);
-  current_reg=(current_reg+1)%num_regs;
+  string target_reg = get_reg();
+  cout<<"  li "<<target_reg<<", "<<integer.value<<endl;
+  nums.push_back(target_reg);
 }
 
 void Visit(const koopa_raw_binary_t &binary) {
@@ -178,6 +202,4 @@ void Visit(const koopa_raw_binary_t &binary) {
   }
   else
     binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op]);
-
-
 }
