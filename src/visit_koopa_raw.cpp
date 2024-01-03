@@ -33,6 +33,16 @@ const deque<string> regs=\
 const int num_regs=regs.size();
 unordered_map<string, int> reg_used; // 记录每个寄存器是否被使用过，1表示被使用过，0表示没被使用过
 
+// 计算当前没被使用过的寄存器的个数
+inline int num_unused_regs()
+{
+  int cnt=0;
+  for(int i=0; i<num_regs; i++)
+    if(reg_used[regs[i]] == 0)
+      cnt++;
+  return cnt;
+}
+
 // 返回没被使用过的第一个寄存器
 inline string get_reg()
 {
@@ -82,7 +92,17 @@ inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, st
   nums.push_back(target_reg);
 }
 
+/********************************lv4 start**********************************/
+// 类型为 koopa_raw_value 的有返回值的语句的存储位置
+static std::unordered_map<koopa_raw_value_t, std::string> loc;
+// 栈帧长度
+static int stack_frame_length = 0;
+// 已经使用的栈帧长度
+static int stack_frame_used = 0;
 
+/*********************************lv4 end***********************************/
+
+/***********************************main************************************/
 // 访问 raw program
 void Visit(const koopa_raw_program_t &program) {
   // 执行一些其他的必要操作
@@ -127,6 +147,37 @@ void Visit(const koopa_raw_function_t &func) {
   // 访问所有基本块
   cout << "  .globl " << func->name+1 << endl;
   cout << func->name+1 << ":" << endl;
+  // 清空
+  stack_frame_length = 0;
+  stack_frame_used = 0;
+
+  // 计算栈帧长度
+  int var_cnt = 0;
+
+  // 遍历基本块
+  for (size_t i = 0; i < func->bbs.len; ++i)
+  {
+    const auto& insts = reinterpret_cast<koopa_raw_basic_block_t>(func->bbs.buffer[i])->insts;
+    var_cnt += insts.len;
+    for (size_t j = 0; j < insts.len; ++j)
+    {
+      auto inst = reinterpret_cast<koopa_raw_value_t>(insts.buffer[j]);
+      if(inst->ty->tag == KOOPA_RTT_UNIT)
+        var_cnt--;
+    }
+  }
+  // std::cout<<"++++"<<var_cnt<<std::endl;
+  stack_frame_length = var_cnt * 4;
+  // std::cout<<"++++"<<stack_frame_length<<std::endl;
+  // 将栈帧长度对齐到 16
+  stack_frame_length = (stack_frame_length + 15) & (~15);
+  // std::cout<<"++++"<<stack_frame_length<<std::endl;
+
+  if (stack_frame_length > 0 && stack_frame_length < 2048)
+    std::cout << "  addi sp, sp, -" << stack_frame_length << std::endl;
+  else if (stack_frame_length >= 2048)
+    std::cout << "  li t0, -" << stack_frame_length << std::endl
+              << "  add sp, sp, t0" << std::endl;
   Visit(func->bbs);
 }
 
@@ -153,6 +204,16 @@ void Visit(const koopa_raw_value_t &value) {
       break;
     case KOOPA_RVT_BINARY:
       Visit(kind.data.binary);
+      break;
+    case KOOPA_RVT_ALLOC:
+      loc[value] = to_string(stack_frame_used) + "(sp)";
+      stack_frame_used += 4;
+      break;
+    case KOOPA_RVT_LOAD:
+      Visit(kind.data.load);
+      break;
+    case KOOPA_RVT_STORE:
+      Visit(kind.data.store);
       break;
     default:
       // 其他类型暂时遇不到
