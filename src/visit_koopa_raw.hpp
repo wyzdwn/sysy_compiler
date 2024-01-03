@@ -21,3 +21,6 @@ void Visit(const koopa_raw_return_t &ret);
 
 // 访问 integer 指令
 void Visit(const koopa_raw_integer_t &integer);
+
+// 访问 binary 指令
+void Visit(const koopa_raw_binary_t &binary);

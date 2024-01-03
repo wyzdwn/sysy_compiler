@@ -4,8 +4,62 @@
 #include <sstream>
 #include <cassert>
 #include "visit_koopa_raw.hpp"
+#include <unordered_map>
+#include <deque>
 
 using namespace std;
+
+// binary op: koopa --> riscv , 注意这里的LE, GE都是“反”的，比如: LE --> sgt
+unordered_map<int, string> binary_op_map={
+  {KOOPA_RBO_NOT_EQ, "snez"},
+  {KOOPA_RBO_EQ, "seqz"},
+  {KOOPA_RBO_LT, "slt"},
+  {KOOPA_RBO_LE, "sgt"},
+  {KOOPA_RBO_GT, "sgt"},
+  {KOOPA_RBO_GE, "slt"},
+  {KOOPA_RBO_ADD, "add"},
+  {KOOPA_RBO_SUB, "sub"},
+  {KOOPA_RBO_MUL, "mul"},
+  {KOOPA_RBO_DIV, "div"},
+  {KOOPA_RBO_MOD, "rem"},
+  {KOOPA_RBO_AND, "and"},
+  {KOOPA_RBO_OR, "or"},
+};
+
+static deque <string> nums; 
+static int current_reg=0; // 可以比下面的num_regs大，但是要模上num_regs
+const deque<string> regs=\
+{"t0", "t1", "t2", "t3", "t4", "t5", "t6", \
+ "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",};
+const int num_regs=regs.size();
+
+// 给定riscv的运算符（op），以及koopaIR的两个操作数（lhs, rhs），生成对应的汇编代码
+inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, string op)
+{
+  if(lhs->kind.tag == KOOPA_RVT_INTEGER && rhs->kind.tag == KOOPA_RVT_INTEGER){
+    Visit(lhs);
+    Visit(rhs);
+    // 用两个操作数对应的两个寄存器中一个来存结果，这里选择最先进入nums的那个，这样只需进行一次pop_back
+    cout<<"  "<<op<<" "<<regs[current_reg]<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
+  }
+  else if(lhs->kind.tag == KOOPA_RVT_INTEGER){
+    Visit(lhs);
+    cout<<"  "<<op<<" "<<regs[current_reg]<<", "<<nums.back()<<", "<<nums[nums.size()-2]<<endl;
+  }
+  else if(rhs->kind.tag == KOOPA_RVT_INTEGER){
+    Visit(rhs);
+    cout<<"  "<<op<<" "<<regs[current_reg]<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
+  }
+  else{
+    cout<<"  "<<op<<" "<<regs[current_reg]<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
+  }
+  nums.pop_back();
+  nums.pop_back();
+  nums.push_back(regs[current_reg]);
+  current_reg=(current_reg+1)%num_regs;
+}
+
+
 // 访问 raw program
 void Visit(const koopa_raw_program_t &program) {
   // 执行一些其他的必要操作
@@ -64,7 +118,7 @@ void Visit(const koopa_raw_basic_block_t &bb) {
 void Visit(const koopa_raw_value_t &value) {
   // 根据指令类型判断后续需要如何访问
   const auto &kind = value->kind;
-  switch (kind.tag) {
+    switch (kind.tag) {
     case KOOPA_RVT_RETURN:
       // 访问 return 指令
       Visit(kind.data.ret);
@@ -72,6 +126,9 @@ void Visit(const koopa_raw_value_t &value) {
     case KOOPA_RVT_INTEGER:
       // 访问 integer 指令
       Visit(kind.data.integer);
+      break;
+    case KOOPA_RVT_BINARY:
+      Visit(kind.data.binary);
       break;
     default:
       // 其他类型暂时遇不到
@@ -82,10 +139,11 @@ void Visit(const koopa_raw_value_t &value) {
 void Visit(const koopa_raw_return_t &ret) {
   // 执行一些其他的必要操作
   // ...
-  cout<<"  li a0, ";
+  
   // 访问返回值
-  Visit(ret.value);
-  cout<<endl;
+  if(ret.value->kind.tag == KOOPA_RVT_INTEGER) Visit(ret.value);
+  cout<<"  mv a0, "<<nums.back()<<endl;
+  nums.pop_back();
   cout<<"  ret";
 }
 
@@ -93,6 +151,33 @@ void Visit(const koopa_raw_integer_t &integer) {
   // 执行一些其他的必要操作
   // ...
   // 访问整数值
-  int32_t int_val = integer.value;
-  cout<<int_val;
+  if(integer.value == 0)
+  {
+    nums.push_back("x0");
+    return;
+  }
+  cout<<"  li "<<regs[current_reg]<<", "<<integer.value<<endl;
+  nums.push_back(regs[current_reg]);
+  current_reg=(current_reg+1)%num_regs;
+}
+
+void Visit(const koopa_raw_binary_t &binary) {
+  // 执行一些其他的必要操作
+  // ...
+  // 访问二元运算符
+  // 把两个操作符的值放到寄存器里，再运算，换句话说，不会出现I类指令
+  if(binary.op == KOOPA_RBO_NOT_EQ || binary.op == KOOPA_RBO_EQ)
+  {
+    binary_two_operands(binary.lhs, binary.rhs, "xor");
+    cout<<"  "<<binary_op_map[binary.op]<<" "<<nums.back()<<", "<<nums.back()<<endl;
+  }
+  else if(binary.op == KOOPA_RBO_LE || binary.op == KOOPA_RBO_GE)
+  {
+    binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op]);
+    cout<<"  seqz "<<nums.back()<<", "<<nums.back()<<endl;
+  }
+  else
+    binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op]);
+
+
 }
