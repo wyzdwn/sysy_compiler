@@ -264,3 +264,21 @@ void Visit(const koopa_raw_binary_t &binary) {
   else
     binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op]);
 }
+
+void Visit(const koopa_raw_load_t &load) {
+  // 执行一些其他的必要操作
+  // ...
+  // 访问 load 指令
+  string target_reg = get_reg();
+  cout<<"  lw "<<target_reg<<", "<<loc[load.src]<<endl;
+  nums.push_back(target_reg);
+}
+
+void Visit(const koopa_raw_store_t &store) {
+  // 执行一些其他的必要操作
+  // ...
+  // 访问 store 指令
+  if(store.value->kind.tag == KOOPA_RVT_INTEGER) Visit(store.value);
+  cout<<"  sw "<<nums.back()<<", "<<loc[store.dest]<<endl;
+  free_reg();
+}
