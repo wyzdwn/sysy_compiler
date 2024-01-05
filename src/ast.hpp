@@ -12,8 +12,11 @@ using namespace std;
 
 static int current_id = 0;
 static deque<string> nums;
-static unordered_map<string, int> symbol_table;
-static unordered_map<string, string> symbol_type;
+// static unordered_map<string, int> symbol_table;
+// static unordered_map<string, string> symbol_type;
+static deque<unordered_map<string, int>*> symbol_table_stack;
+
+static deque<unordered_map<string, string>*> symbol_type_stack;
 
 // 用于计算的操作符到 Koopa IR 指令的映射
 static unordered_map<char, string> CalOp2Instruct={
@@ -61,6 +64,17 @@ inline void KoopaIR_logic_operands(string instruct)
   }
 }
 
+inline string get_target_ident(string ident)
+{
+  for(int i=symbol_table_stack.size()-1; i>=0; i--){
+    string target_ident = ident + "_" + to_string(i);
+    if(symbol_table_stack[i]->find(target_ident)!=symbol_table_stack[i]->end()){
+      return target_ident;
+    }
+  }
+  return "";
+}
+
 // 所有 AST 的基类
 class BaseAST {
  public:
@@ -106,6 +120,7 @@ class FuncDefAST : public BaseAST {
     cout << "fun @"<<ident<<"(): ";
     func_type->KoopaIR();
     cout << " {\n";
+    cout << "%entry:\n";
     block->KoopaIR();
     cout << "}";
   }
@@ -139,17 +154,19 @@ class LValAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      if(symbol_type[ident]=="const"){
-        nums.push_back(to_string(symbol_table[ident]));
+      string target_ident = get_target_ident(ident);
+      if(target_ident=="") throw("undefined variable: " + ident);
+      if(symbol_type_stack.back()->at(target_ident)=="const"){
+        nums.push_back(to_string(symbol_table_stack.back()->at(target_ident)));
       }
       else{
-        cout << "  %"<< current_id << " = load @" << ident << endl;
+        cout << "  %"<< current_id << " = load @" << target_ident << endl;
         nums.push_back("%"+to_string(current_id));
         current_id++;
       }
     }
     int Calculate() const override {
-      return symbol_table[ident];
+      return symbol_table_stack.back()->at(get_target_ident(ident));
     }
 };
 
@@ -166,10 +183,16 @@ class BlockAST : public BaseAST {
     cout << " }";
   }
   void KoopaIR() const override {
-    cout << "%entry:\n";
+    unordered_map<string, int> *symbol_table=new unordered_map<string, int>;
+    unordered_map<string, string> *symbol_type=new unordered_map<string, string>;
+    symbol_table_stack.push_back(symbol_table);
+    symbol_type_stack.push_back(symbol_type);
     for(auto &i:*block_item_list){
       i->KoopaIR();
     }
+    symbol_table_stack.pop_back();
+    free(symbol_table);
+    symbol_type_stack.pop_back();
   }
   int Calculate() const override {
     return 0;
@@ -211,6 +234,8 @@ class StmtAST : public BaseAST {
  public:
   unique_ptr<BaseAST> exp;
   unique_ptr<BaseAST> lval;
+  unique_ptr<BaseAST> block;
+  unique_ptr<BaseAST> exp_only;
 
   void Dump() const override {
     cout << "StmtAST { ";
@@ -224,16 +249,25 @@ class StmtAST : public BaseAST {
     cout << " }";
   }
   void KoopaIR() const override {
-    if(!lval){
+    if(!lval && !block){
       exp->KoopaIR();
       cout<<"  ret "<<nums.back()<<endl;
       nums.pop_back();
     }
-    else{
+    else if (lval) {
       exp->KoopaIR();
       std::cout << "  store " << nums.back() << ", @";
-      std::cout << dynamic_cast<LValAST*>(lval.get())->ident << std::endl;
+      string ident = dynamic_cast<LValAST*>(lval.get())->ident;
+      string target_ident = get_target_ident(ident);
+      if(target_ident=="") throw("undefined variable: " + ident);
+      std::cout << target_ident << std::endl;
       nums.pop_back();
+    }
+    else if (block){
+      block->KoopaIR();
+    }
+    else if(exp_only){
+      exp_only->KoopaIR();
     }
   }
   int Calculate() const override {
@@ -700,8 +734,9 @@ class ConstDefAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      symbol_table[ident] = const_init_val->Calculate();
-      symbol_type[ident] = "const";
+      string target_ident = ident + "_" + to_string(symbol_table_stack.size());
+      symbol_table_stack.back()->emplace(target_ident, const_init_val->Calculate());
+      symbol_type_stack.back()->emplace(target_ident, "const");
     }
     int Calculate() const override {
       return 0;
@@ -782,12 +817,13 @@ class VarDefAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      cout << "  @" << ident << " = alloc i32" << endl;
-      symbol_table[ident] = 0;
-      symbol_type[ident] = "var";
+      string target_ident = ident + "_" + to_string(symbol_table_stack.size());
+      cout << "  @" << target_ident << " = alloc i32" << endl;
+      symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
+      symbol_type_stack.back()->emplace(target_ident, "var");
       if(init_val) {
         init_val->KoopaIR();
-        cout << "  store " << nums.back() << ", @" << ident << endl;
+        cout << "  store " << nums.back() << ", @" << target_ident << endl;
         nums.pop_back();
       }
     }
