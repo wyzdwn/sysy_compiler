@@ -53,12 +53,6 @@ inline void KoopaIR_two_operands(string instruct)
 inline void KoopaIR_logic_operands(string instruct)
 {
   if(instruct=="and"){
-    cout << "  %"<< current_id++ << " = ne 0, " << nums[nums.size()-2] << endl;
-    cout << "  %"<< current_id++ << " = ne 0, " << nums.back() << endl;
-    nums.pop_back();
-    nums.pop_back();
-    nums.push_back("%"+to_string(current_id-2));
-    nums.push_back("%"+to_string(current_id-1));
     KoopaIR_two_operands("and");
   }
   else{
@@ -508,7 +502,15 @@ class LAndExpAST: public BaseAST{
     void KoopaIR() const override {
       if (land_exp) {
         land_exp->KoopaIR();
+        cout << "  %"<< current_id++ << " = ne 0, " << nums.back() << endl;
+        nums.pop_back();
+        nums.push_back("%"+to_string(current_id-1));
+
         eq_exp->KoopaIR();
+        cout << "  %"<< current_id++ << " = ne 0, " << nums.back() << endl;
+        nums.pop_back();
+        nums.push_back("%"+to_string(current_id-1));
+        
         KoopaIR_logic_operands("and");
       } else {
         eq_exp->KoopaIR();
