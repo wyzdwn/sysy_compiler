@@ -15,6 +15,8 @@ static deque<string> nums;
 static deque<unordered_map<string, int>*> symbol_table_stack;
 static deque<unordered_map<string, string>*> symbol_type_stack;
 
+static int fun_ret_flag=0;
+
 // 用于计算的操作符到 Koopa IR 指令的映射
 static unordered_map<char, string> CalOp2Instruct={
   {'+', "add"},
@@ -129,7 +131,12 @@ class FuncDefAST : public BaseAST {
     func_type->KoopaIR();
     cout << " {\n";
     cout << "%entry:\n";
+    fun_ret_flag=0;
     block->KoopaIR();
+    if(fun_ret_flag==0)
+    {
+      cout<<"  ret"<<endl;
+    }
     cout << "}";
   }
   int Calculate() const override {
@@ -281,13 +288,16 @@ class StmtAST : public BaseAST {
       cout << target_ident << endl;
       nums.pop_back();
     } else if(return_){
+      if(fun_ret_flag) return;
       if(!exp)
       {
         cout<<"  ret"<<endl;
+        fun_ret_flag=1;
         return ;
       }
       exp->KoopaIR();
       cout<<"  ret "<<nums.back()<<endl;
+      fun_ret_flag=1;
       nums.pop_back();
     }
     
