@@ -11,9 +11,13 @@
 using namespace std;
 
 static int current_id = 0;
+static int if_id = 0;
+static int or_id = 0;
+static int and_id = 0;
 static deque<string> nums;
 static deque<unordered_map<string, int>*> symbol_table_stack;
 static deque<unordered_map<string, string>*> symbol_type_stack;
+static deque<string> block_stack;
 
 static int fun_ret_flag=0;
 
@@ -68,7 +72,7 @@ inline vector<string> get_target_ident(string ident)
 {
   vector<string> ret;
   for(int i=symbol_table_stack.size()-1; i>=0; i--){
-    string target_ident = ident + "_" + to_string(i+1);
+    string target_ident = block_stack[i] + ident + "_" + to_string(i+1);
     if(symbol_table_stack[i]->find(target_ident)!=symbol_table_stack[i]->end()){
       ret.push_back(target_ident);
       ret.push_back(symbol_type_stack[i]->at(target_ident));
@@ -132,6 +136,7 @@ class FuncDefAST : public BaseAST {
     cout << " {\n";
     cout << "%entry:\n";
     fun_ret_flag=0;
+    block_stack.push_back(ident);
     block->KoopaIR();
     if(fun_ret_flag==0)
     {
@@ -251,12 +256,108 @@ class BlockItemAST: public BaseAST{
     }
 };
 
+class IfStmtAST: public BaseAST{
+  public:
+    unique_ptr<BaseAST> if_stmt;
+
+    void Dump() const override {
+      cout << "IfStmt { ";
+      if_stmt->Dump();
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      if_stmt->KoopaIR();
+    }
+    int Calculate() const override {
+      return 0;
+    }
+};
+
+class OnlyIfAST: public BaseAST{
+  public:
+    unique_ptr<BaseAST> exp;
+    unique_ptr<BaseAST> stmt;
+
+    void Dump() const override {
+      cout << "OnlyIf { ";
+      exp->Dump();
+      cout << ", ";
+      stmt->Dump();
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      if(fun_ret_flag) return;
+      int now_if = if_id++;
+      exp->KoopaIR();
+      cout << "  br " << nums.back() << ", %If_" << now_if << ", %IfEnd_" << now_if << endl; 
+      nums.pop_back();
+
+      cout << "%If_" << now_if << ":" << endl;
+      block_stack.push_back("If_"+to_string(now_if));
+      fun_ret_flag=0;
+      stmt->KoopaIR();
+      block_stack.pop_back();
+      if(!fun_ret_flag) cout << "  jump %IfEnd_" << now_if << endl;
+
+      cout << "%IfEnd_" << now_if << ":" <<endl;
+      fun_ret_flag=0;
+    }
+    int Calculate() const override {
+      return 0;
+    }
+};
+
+class IfElseAST: public BaseAST{
+  public:
+    unique_ptr<BaseAST> exp;
+    unique_ptr<BaseAST> if_stmt;
+    unique_ptr<BaseAST> else_stmt;
+
+    void Dump() const override {
+      cout << "IfElse { ";
+      exp->Dump();
+      cout << ", ";
+      if_stmt->Dump();
+      cout << ", ";
+      else_stmt->Dump();
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      if(fun_ret_flag) return;
+      int now_if=if_id++;
+      exp->KoopaIR();
+      cout << "  br " << nums.back() << ", %If_" << now_if << ", %Else_" << now_if << endl; 
+      nums.pop_back();
+
+      cout << "%If_" << now_if << ":" << endl;
+      block_stack.push_back("If_"+to_string(now_if));
+      fun_ret_flag=0;
+      if_stmt->KoopaIR();
+      block_stack.pop_back();
+      if(!fun_ret_flag) cout << "  jump %IfEnd_" << now_if << endl;
+
+      cout << "%Else_" << now_if << ":" <<endl;
+      block_stack.push_back("Else_"+to_string(now_if));
+      fun_ret_flag=0;
+      else_stmt->KoopaIR();
+      block_stack.pop_back();
+      if(!fun_ret_flag) cout << "  jump %IfEnd_" << now_if << endl;
+
+      cout << "%IfEnd_" << now_if << ":" <<endl;
+      fun_ret_flag=0;
+    }
+    int Calculate() const override {
+      return 0;
+    }
+};
+
 class StmtAST : public BaseAST {
  public:
   unique_ptr<BaseAST> exp;
   unique_ptr<BaseAST> lval;
   unique_ptr<BaseAST> block;
   unique_ptr<BaseAST> exp_only;
+  unique_ptr<BaseAST> if_stmt;
   bool return_;
 
   void Dump() const override {
@@ -272,6 +373,8 @@ class StmtAST : public BaseAST {
     } else if(return_){
       cout << "return ";
       if(exp) exp->Dump();
+    } else if(if_stmt){
+      if_stmt->Dump();
     }
     cout << " }";
   }
@@ -300,6 +403,8 @@ class StmtAST : public BaseAST {
       cout<<"  ret "<<nums.back()<<endl;
       fun_ret_flag=1;
       nums.pop_back();
+    } else if(if_stmt){
+      if_stmt->KoopaIR();
     }
     
     
@@ -534,9 +639,27 @@ class LOrExpAST: public BaseAST{
     }
     void KoopaIR() const override {
       if (lor_exp) {
+        // cout << "  @" << "Or_" << or_id << " = alloc i32" << endl;
         lor_exp->KoopaIR();
+        // // 如果lor_exp为真，那么land_exp就不用计算了，设置标签跳过land_exp
+        // cout << "  br " << nums.back() << ", %OrSkip_" << or_id << ", %OrBody_" << or_id << endl;
+        
+
+        // cout << "%OrBody_" << or_id << ":" << endl;
         land_exp->KoopaIR();
         KoopaIR_logic_operands("or");
+        // cout << "  store " << nums.back() << ", @Or_" << or_id << endl;
+        // nums.pop_back();
+        // cout << "  jump %OrEnd_" << or_id << endl;
+
+        // cout << "%OrSkip_" << or_id << ":" << endl;
+        // cout << "  store 1, @Or_" << or_id << endl;
+        // cout << "  jump %OrEnd_" << or_id << endl;
+
+        // cout << "%OrEnd_" << or_id << ":" << endl;
+        // cout << "  %"<< current_id++ << " = load @Or_" << or_id << endl;
+        // nums.push_back("%"+to_string(current_id-1));
+        // or_id++;
       } else {
         land_exp->KoopaIR();
       }
@@ -768,7 +891,7 @@ class ConstDefAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      string target_ident = ident + "_" + to_string(symbol_table_stack.size());
+      string target_ident = block_stack.back() + ident + "_" + to_string(symbol_table_stack.size());
       symbol_table_stack.back()->emplace(target_ident, const_init_val->Calculate());
       symbol_type_stack.back()->emplace(target_ident, "const");
     }
@@ -851,7 +974,7 @@ class VarDefAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      string target_ident = ident + "_" + to_string(symbol_table_stack.size());
+      string target_ident = block_stack.back() + ident + "_" + to_string(symbol_table_stack.size());
       cout << "  @" << target_ident << " = alloc i32" << endl;
       symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
       symbol_type_stack.back()->emplace(target_ident, "var");

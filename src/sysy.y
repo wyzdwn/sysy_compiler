@@ -40,7 +40,7 @@ using namespace std;
 
 // lexer 返回的所有 token 种类的声明
 // 注意 IDENT 和 INT_CONST 会返回 token 的值, 分别对应 str_val 和 int_val
-%token INT RETURN AND OR CONST
+%token INT RETURN AND OR CONST IF ELSE
 %token <str_val> IDENT EQOP RELOP
 %token <int_val> INT_CONST
 
@@ -52,6 +52,8 @@ using namespace std;
 %type <ast_val> VarDecl VarDef InitVal
 
 %type <vec_val> BlockItemList ConstDefList VarDefList
+
+%type <ast_val> IfStmt OnlyIf IfElse
 
 
 %%
@@ -166,6 +168,43 @@ Stmt
   }
   | ';' {
     auto ast = new StmtAST();
+    $$ = ast;
+  }
+  | IfStmt {
+    auto ast = new StmtAST();
+    ast->if_stmt = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  ;
+
+IfStmt
+  : OnlyIf {
+    auto ast=new IfStmtAST();
+    ast->if_stmt=unique_ptr<BaseAST>($1);
+    $$=ast;
+  }
+  | IfElse {
+    auto ast=new IfStmtAST();
+    ast->if_stmt=unique_ptr<BaseAST>($1);
+    $$=ast;
+  }
+  ;
+
+OnlyIf
+  : IF '(' Exp ')' Stmt {
+    auto ast = new OnlyIfAST();
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->stmt = unique_ptr<BaseAST>($5);
+    $$ = ast;
+  }
+  ;
+
+IfElse
+  : IF '(' Exp ')' Stmt ELSE Stmt {
+    auto ast = new IfElseAST();
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->if_stmt = unique_ptr<BaseAST>($5);
+    ast->else_stmt = unique_ptr<BaseAST>($7);
     $$ = ast;
   }
   ;
