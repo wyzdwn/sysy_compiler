@@ -34,7 +34,7 @@ const int num_regs=regs.size();
 unordered_map<string, int> reg_used; // 记录每个寄存器是否被使用过，1表示被使用过，0表示没被使用过
 
 // 计算当前没被使用过的寄存器的个数
-inline int num_unused_regs()
+inline int get_num_unused_regs()
 {
   int cnt=0;
   for(int i=0; i<num_regs; i++)
@@ -210,7 +210,7 @@ void Visit(const koopa_raw_value_t &value) {
       stack_frame_used += 4;
       break;
     case KOOPA_RVT_LOAD:
-      Visit(kind.data.load);
+      Visit(kind.data.load, value);
       break;
     case KOOPA_RVT_STORE:
       Visit(kind.data.store);
@@ -265,13 +265,21 @@ void Visit(const koopa_raw_binary_t &binary) {
     binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op]);
 }
 
-void Visit(const koopa_raw_load_t &load) {
+void Visit(const koopa_raw_load_t &load, const koopa_raw_value_t &value) {
   // 执行一些其他的必要操作
   // ...
   // 访问 load 指令
   string target_reg = get_reg();
   cout<<"  lw "<<target_reg<<", "<<loc[load.src]<<endl;
   nums.push_back(target_reg);
+  if(get_num_unused_regs()<=regs.size()/2)
+  {
+    loc[value] = std::to_string(stack_frame_used) + "(sp)";
+    stack_frame_used += 4;
+    cout<<"  sw "<<target_reg<<", "<<loc[value]<<endl;
+    free_reg();
+    nums.push_back(loc[value]);
+  }
 }
 
 void Visit(const koopa_raw_store_t &store) {
