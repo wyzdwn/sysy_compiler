@@ -32,7 +32,7 @@ const deque<string> regs=\
  "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",};
 const int num_regs=regs.size();
 unordered_map<string, int> reg_used; // 记录每个寄存器是否被使用过，1表示被使用过，0表示没被使用过
-const int threshold=num_regs/2; // 当没被使用过的寄存器的个数小于等于threshold时，就要把寄存器中的值存到栈里
+const int threshold=num_regs; // 当没被使用过的寄存器的个数小于等于threshold时，就要把寄存器中的值存到栈里
 
 /********************************lv4 start**********************************/
 // 类型为 koopa_raw_value 的有返回值的语句的存储位置
