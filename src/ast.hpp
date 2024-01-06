@@ -12,10 +12,7 @@ using namespace std;
 
 static int current_id = 0;
 static deque<string> nums;
-// static unordered_map<string, int> symbol_table;
-// static unordered_map<string, string> symbol_type;
 static deque<unordered_map<string, int>*> symbol_table_stack;
-
 static deque<unordered_map<string, string>*> symbol_type_stack;
 
 // 用于计算的操作符到 Koopa IR 指令的映射
@@ -64,15 +61,26 @@ inline void KoopaIR_logic_operands(string instruct)
   }
 }
 
-inline string get_target_ident(string ident)
+// 从符号表栈中找到符号的标识符，返回一个vector: {符号的标识符, 类型(const/var), 符号的值}
+inline vector<string> get_target_ident(string ident)
 {
+  vector<string> ret;
   for(int i=symbol_table_stack.size()-1; i>=0; i--){
-    string target_ident = ident + "_" + to_string(i);
+    string target_ident = ident + "_" + to_string(i+1);
     if(symbol_table_stack[i]->find(target_ident)!=symbol_table_stack[i]->end()){
-      return target_ident;
+      ret.push_back(target_ident);
+      ret.push_back(symbol_type_stack[i]->at(target_ident));
+      ret.push_back(to_string(symbol_table_stack[i]->at(target_ident)));
+      break;
     }
   }
-  return "";
+  if(ret.size()==0)
+  {
+    ret.push_back("");
+    ret.push_back("");
+    ret.push_back("");
+  }
+  return ret;
 }
 
 // 所有 AST 的基类
@@ -154,10 +162,12 @@ class LValAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      string target_ident = get_target_ident(ident);
+      string target_ident = get_target_ident(ident)[0];
+      string target_type = get_target_ident(ident)[1];
+      string target_value = get_target_ident(ident)[2];
       if(target_ident=="") throw("undefined variable: " + ident);
-      if(symbol_type_stack.back()->at(target_ident)=="const"){
-        nums.push_back(to_string(symbol_table_stack.back()->at(target_ident)));
+      if(target_type=="const"){
+        nums.push_back(target_value);
       }
       else{
         cout << "  %"<< current_id << " = load @" << target_ident << endl;
@@ -166,7 +176,7 @@ class LValAST: public BaseAST{
       }
     }
     int Calculate() const override {
-      return symbol_table_stack.back()->at(get_target_ident(ident));
+      return symbol_table_stack.back()->at(get_target_ident(ident)[0]);
     }
 };
 
@@ -175,6 +185,7 @@ class BlockAST : public BaseAST {
   unique_ptr<vector<unique_ptr<BaseAST>>> block_item_list;
 
   void Dump() const override {
+    if(!block_item_list) return;
     cout << "Block { ";
     for(auto &i:*block_item_list){
       i->Dump();
@@ -183,16 +194,18 @@ class BlockAST : public BaseAST {
     cout << " }";
   }
   void KoopaIR() const override {
+    if(!block_item_list) return;
     unordered_map<string, int> *symbol_table=new unordered_map<string, int>;
     unordered_map<string, string> *symbol_type=new unordered_map<string, string>;
     symbol_table_stack.push_back(symbol_table);
     symbol_type_stack.push_back(symbol_type);
-    for(auto &i:*block_item_list){
+        for(auto &i:*block_item_list){
       i->KoopaIR();
     }
     symbol_table_stack.pop_back();
     free(symbol_table);
     symbol_type_stack.pop_back();
+    free(symbol_type);
   }
   int Calculate() const override {
     return 0;
@@ -236,39 +249,49 @@ class StmtAST : public BaseAST {
   unique_ptr<BaseAST> lval;
   unique_ptr<BaseAST> block;
   unique_ptr<BaseAST> exp_only;
+  bool return_;
 
   void Dump() const override {
     cout << "StmtAST { ";
-    if (!lval) {
-      exp->Dump();
-    } else {
+    if(block){
+      block->Dump();
+    } else if(exp_only){
+      exp_only->Dump(); 
+    } else if (lval) {
       lval->Dump();
       cout << " = ";
       exp->Dump();
+    } else if(return_){
+      cout << "return ";
+      if(exp) exp->Dump();
     }
     cout << " }";
   }
   void KoopaIR() const override {
-    if(!lval && !block){
+    if (block){
+      block->KoopaIR();
+    } else if(exp_only){
+      exp_only->KoopaIR();
+    } else if (lval) {
+      exp->KoopaIR();
+      cout << "  store " << nums.back() << ", @";
+      string ident = dynamic_cast<LValAST*>(lval.get())->ident;
+      string target_ident = get_target_ident(ident)[0];
+      if(target_ident=="") throw("undefined variable: " + ident);
+      cout << target_ident << endl;
+      nums.pop_back();
+    } else if(return_){
+      if(!exp)
+      {
+        cout<<"  ret"<<endl;
+        return ;
+      }
       exp->KoopaIR();
       cout<<"  ret "<<nums.back()<<endl;
       nums.pop_back();
     }
-    else if (lval) {
-      exp->KoopaIR();
-      std::cout << "  store " << nums.back() << ", @";
-      string ident = dynamic_cast<LValAST*>(lval.get())->ident;
-      string target_ident = get_target_ident(ident);
-      if(target_ident=="") throw("undefined variable: " + ident);
-      std::cout << target_ident << std::endl;
-      nums.pop_back();
-    }
-    else if (block){
-      block->KoopaIR();
-    }
-    else if(exp_only){
-      exp_only->KoopaIR();
-    }
+    
+    
   }
   int Calculate() const override {
     return 0;

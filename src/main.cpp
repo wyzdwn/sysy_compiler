@@ -46,12 +46,14 @@ int main(int argc, const char *argv[]) {
   auto ret = yyparse(ast);
   assert(!ret);
 
+  cout<<"parse done"<<endl;
   stringstream ss;
   
 
   // dump AST
+  cout<<"Dump start"<<endl;
   ast->Dump();
-  cout << endl;
+  cout <<"Dump done"<< endl;
 
   // 将标准输出重定向到ofs
   streambuf *cout_backup = cout.rdbuf(ss.rdbuf());;

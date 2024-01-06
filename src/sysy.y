@@ -117,6 +117,10 @@ BlockItemList
     vec->push_back(unique_ptr<BaseAST>($2));
     $$ = vec;
   }
+  | {
+    auto vec = new vector<unique_ptr<BaseAST>>();
+    $$ = vec;
+  }
   ;
 
 BlockItem
@@ -136,10 +140,12 @@ Stmt
   : RETURN Exp ';' {
     auto ast = new StmtAST();
     ast->exp = unique_ptr<BaseAST>($2);
+    ast->return_ = true;
     $$ = ast;
   }
   | RETURN ';' {
     auto ast = new StmtAST();
+    ast->return_ = true;
     $$ = ast;
   }
   | LVal '=' Exp ';' {
