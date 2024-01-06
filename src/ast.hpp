@@ -201,12 +201,13 @@ class BlockAST : public BaseAST {
     cout << " }";
   }
   void KoopaIR() const override {
-    if(!block_item_list || fun_ret_flag) return;
+    if(!block_item_list) return;
     unordered_map<string, int> *symbol_table=new unordered_map<string, int>;
     unordered_map<string, string> *symbol_type=new unordered_map<string, string>;
     symbol_table_stack.push_back(symbol_table);
     symbol_type_stack.push_back(symbol_type);
-        for(auto &i:*block_item_list){
+    for(auto &i:*block_item_list){
+      if(fun_ret_flag) break;
       i->KoopaIR();
     }
     symbol_table_stack.pop_back();
