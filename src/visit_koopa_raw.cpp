@@ -32,6 +32,17 @@ const deque<string> regs=\
  "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",};
 const int num_regs=regs.size();
 unordered_map<string, int> reg_used; // 记录每个寄存器是否被使用过，1表示被使用过，0表示没被使用过
+const int threshold=num_regs/2; // 当没被使用过的寄存器的个数小于等于threshold时，就要把寄存器中的值存到栈里
+
+/********************************lv4 start**********************************/
+// 类型为 koopa_raw_value 的有返回值的语句的存储位置
+static std::unordered_map<koopa_raw_value_t, std::string> loc;
+// 栈帧长度
+static int stack_frame_length = 0;
+// 已经使用的栈帧长度
+static int stack_frame_used = 0;
+
+/*********************************lv4 end***********************************/
 
 // 计算当前没被使用过的寄存器的个数
 inline int get_num_unused_regs()
@@ -63,7 +74,7 @@ inline void free_reg()
 }
 
 // 给定riscv的运算符（op），以及koopaIR的两个操作数（lhs, rhs），生成对应的汇编代码
-inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, string op)
+inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, string op, const koopa_raw_value_t &value)
 {
   string target_reg;
   if(lhs->kind.tag == KOOPA_RVT_INTEGER && rhs->kind.tag == KOOPA_RVT_INTEGER){
@@ -90,17 +101,17 @@ inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, st
   free_reg();
   free_reg();
   nums.push_back(target_reg);
+  if(get_num_unused_regs()<=threshold)
+  {
+    loc[value] = std::to_string(stack_frame_used) + "(sp)";
+    stack_frame_used += 4;
+    cout<<"  sw "<<target_reg<<", "<<loc[value]<<endl;
+    free_reg();
+    nums.push_back(loc[value]);
+  }
 }
 
-/********************************lv4 start**********************************/
-// 类型为 koopa_raw_value 的有返回值的语句的存储位置
-static std::unordered_map<koopa_raw_value_t, std::string> loc;
-// 栈帧长度
-static int stack_frame_length = 0;
-// 已经使用的栈帧长度
-static int stack_frame_used = 0;
 
-/*********************************lv4 end***********************************/
 
 /***********************************main************************************/
 // 访问 raw program
@@ -203,7 +214,7 @@ void Visit(const koopa_raw_value_t &value) {
       Visit(kind.data.integer);
       break;
     case KOOPA_RVT_BINARY:
-      Visit(kind.data.binary);
+      Visit(kind.data.binary, value);
       break;
     case KOOPA_RVT_ALLOC:
       loc[value] = to_string(stack_frame_used) + "(sp)";
@@ -246,23 +257,23 @@ void Visit(const koopa_raw_integer_t &integer) {
   nums.push_back(target_reg);
 }
 
-void Visit(const koopa_raw_binary_t &binary) {
+void Visit(const koopa_raw_binary_t &binary, const koopa_raw_value_t &value) {
   // 执行一些其他的必要操作
   // ...
   // 访问二元运算符
   // 把两个操作符的值放到寄存器里，再运算，换句话说，不会出现I类指令
   if(binary.op == KOOPA_RBO_NOT_EQ || binary.op == KOOPA_RBO_EQ)
   {
-    binary_two_operands(binary.lhs, binary.rhs, "xor");
+    binary_two_operands(binary.lhs, binary.rhs, "xor", value);
     cout<<"  "<<binary_op_map[binary.op]<<" "<<nums.back()<<", "<<nums.back()<<endl;
   }
   else if(binary.op == KOOPA_RBO_LE || binary.op == KOOPA_RBO_GE)
   {
-    binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op]);
+    binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op], value);
     cout<<"  seqz "<<nums.back()<<", "<<nums.back()<<endl;
   }
   else
-    binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op]);
+    binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op], value);
 }
 
 void Visit(const koopa_raw_load_t &load, const koopa_raw_value_t &value) {
@@ -272,7 +283,7 @@ void Visit(const koopa_raw_load_t &load, const koopa_raw_value_t &value) {
   string target_reg = get_reg();
   cout<<"  lw "<<target_reg<<", "<<loc[load.src]<<endl;
   nums.push_back(target_reg);
-  if(get_num_unused_regs()<=regs.size()/2)
+  if(get_num_unused_regs()<=threshold)
   {
     loc[value] = std::to_string(stack_frame_used) + "(sp)";
     stack_frame_used += 4;
