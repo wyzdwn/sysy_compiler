@@ -17,11 +17,11 @@ static int if_id = 0;
 static int or_id = 0;
 static int and_id = 0;
 static int while_id = 0;
+static int now_while = 0;
 static deque<string> nums;
 static deque<unordered_map<string, int>*> symbol_table_stack;
 static deque<unordered_map<string, string>*> symbol_type_stack;
 static deque<string> block_stack;
-static deque<int> while_stack;
 
 static int fun_ret_flag=0;
 
@@ -419,10 +419,10 @@ class StmtAST : public BaseAST {
       if_stmt->KoopaIR();
     } else if(while_stmt){
       if(fun_ret_flag) return;
-      int now_while=while_id++;
+      now_while=while_id++;
+      int save_while=now_while;
       cout<<"  jump %While_"<<now_while<<endl;
       cout<<"%While_"<<now_while<<":"<<endl;
-      while_stack.push_back(now_while);
       fun_ret_flag=0;
       exp->KoopaIR();
       cout << "  br " << nums.back() << ", %WhileBody_" << now_while << ", %WhileEnd_" << now_while << endl; 
@@ -435,15 +435,15 @@ class StmtAST : public BaseAST {
       if(!fun_ret_flag) cout << "  jump %While_" << now_while << endl;
 
       cout << "%WhileEnd_" << now_while << ":" <<endl;
-      while_stack.pop_back();
+      now_while=save_while;
       fun_ret_flag=0;
     } else if(break_){
       // if(fun_ret_flag) return;
-      cout << "  jump %WhileEnd_" << while_stack.back() << endl;
+      cout << "  jump %WhileEnd_" << now_while << endl;
       fun_ret_flag=1;
     } else if(continue_){
       // if(fun_ret_flag) return;
-      cout << "  jump %While_" << while_stack.back() << endl;
+      cout << "  jump %While_" << now_while << endl;
       fun_ret_flag=1;
     }
     
