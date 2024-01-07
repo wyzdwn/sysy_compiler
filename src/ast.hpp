@@ -646,29 +646,29 @@ class LOrExpAST: public BaseAST{
     }
     void KoopaIR() const override {
       if (lor_exp) {
-        or_id++;
-        cout << "  @" << "Or_" << or_id << " = alloc i32" << endl;
+        int now_or=or_id++;
+        cout << "  @" << "Or_" << now_or << " = alloc i32" << endl;
         lor_exp->KoopaIR();
         // 如果lor_exp为真，那么land_exp就不用计算了，设置标签跳过land_exp
-        cout << "  br " << nums.back() << ", %OrSkip_" << or_id << ", %OrBody_" << or_id << endl;
+        cout << "  br " << nums.back() << ", %OrSkip_" << now_or << ", %OrBody_" << now_or << endl;
         
-        cout << "%OrBody_" << or_id << ":" << endl;
+        cout << "%OrBody_" << now_or << ":" << endl;
         fun_ret_flag=0;
-        block_name="Or_Body" + to_string(or_id) + "_";
+        block_name="Or_Body" + to_string(now_or) + "_";
         land_exp->KoopaIR();
         KoopaIR_logic_operands("or");
-        cout << "  store " << nums.back() << ", @Or_" << or_id << endl;
+        cout << "  store " << nums.back() << ", @Or_" << now_or << endl;
         nums.pop_back();
-        if(!fun_ret_flag) cout << "  jump %OrEnd_" << or_id << endl;
+        if(!fun_ret_flag) cout << "  jump %OrEnd_" << now_or << endl;
 
-        cout << "%OrSkip_" << or_id << ":" << endl;
+        cout << "%OrSkip_" << now_or << ":" << endl;
         fun_ret_flag=0;
-        cout << "  store 1, @Or_" << or_id << endl;
-        if(!fun_ret_flag) cout << "  jump %OrEnd_" << or_id << endl;
+        cout << "  store 1, @Or_" << now_or << endl;
+        if(!fun_ret_flag) cout << "  jump %OrEnd_" << now_or << endl;
 
-        cout << "%OrEnd_" << or_id << ":" << endl;
+        cout << "%OrEnd_" << now_or << ":" << endl;
         fun_ret_flag=0;
-        cout << "  %"<< current_id++ << " = load @Or_" << or_id << endl;
+        cout << "  %"<< current_id++ << " = load @Or_" << now_or << endl;
         nums.push_back("%"+to_string(current_id-1));
       } else {
         land_exp->KoopaIR();
@@ -704,35 +704,35 @@ class LAndExpAST: public BaseAST{
     }
     void KoopaIR() const override {
       if (land_exp) {
-        and_id++;
-        cout << "  @" << "And_" << and_id << " = alloc i32" << endl;
+        int now_and = and_id++;
+        cout << "  @" << "And_" << now_and << " = alloc i32" << endl;
         land_exp->KoopaIR();
         cout << "  %"<< current_id++ << " = ne 0, " << nums.back() << endl;
         nums.pop_back();
         nums.push_back("%"+to_string(current_id-1));
         // 如果land_exp为假，那么eq_exp就不用计算了，设置标签跳过eq_exp
-        cout << "  br " << nums.back() << ", %AndBody_" << and_id << ", %AndSkip_" << and_id << endl;
+        cout << "  br " << nums.back() << ", %AndBody_" << now_and << ", %AndSkip_" << now_and << endl;
 
-        cout << "%AndBody_" << and_id << ":" << endl;
+        cout << "%AndBody_" << now_and << ":" << endl;
         fun_ret_flag=0;
-        block_name="And_Body" + to_string(and_id) + "_";
+        block_name="And_Body" + to_string(now_and) + "_";
         eq_exp->KoopaIR();
         cout << "  %"<< current_id++ << " = ne 0, " << nums.back() << endl;
         nums.pop_back();
         nums.push_back("%"+to_string(current_id-1));
         KoopaIR_logic_operands("and");
-        cout << "  store " << nums.back() << ", @And_" << and_id << endl;
+        cout << "  store " << nums.back() << ", @And_" << now_and << endl;
         nums.pop_back();
-        if(!fun_ret_flag) cout << "  jump %AndEnd_" << and_id << endl;
+        if(!fun_ret_flag) cout << "  jump %AndEnd_" << now_and << endl;
 
-        cout << "%AndSkip_" << and_id << ":" << endl;
+        cout << "%AndSkip_" << now_and << ":" << endl;
         fun_ret_flag=0;
-        cout << "  store 0, @And_" << and_id << endl;
-        if(!fun_ret_flag) cout << "  jump %AndEnd_" << and_id << endl;
+        cout << "  store 0, @And_" << now_and << endl;
+        if(!fun_ret_flag) cout << "  jump %AndEnd_" << now_and << endl;
 
-        cout << "%AndEnd_" << and_id << ":" << endl;
+        cout << "%AndEnd_" << now_and << ":" << endl;
         fun_ret_flag=0;
-        cout << "  %"<< current_id++ << " = load @And_" << and_id << endl;
+        cout << "  %"<< current_id++ << " = load @And_" << now_and << endl;
         nums.push_back("%"+to_string(current_id-1));
       } else {
         eq_exp->KoopaIR();
