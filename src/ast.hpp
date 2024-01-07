@@ -653,17 +653,20 @@ class LOrExpAST: public BaseAST{
         cout << "  br " << nums.back() << ", %OrSkip_" << or_id << ", %OrBody_" << or_id << endl;
         
         cout << "%OrBody_" << or_id << ":" << endl;
+        fun_ret_flag=0;
+        block_name="Or_Body" + to_string(or_id) + "_";
         land_exp->KoopaIR();
         KoopaIR_logic_operands("or");
         cout << "  store " << nums.back() << ", @Or_" << or_id << endl;
         nums.pop_back();
-        cout << "  jump %OrEnd_" << or_id << endl;
+        if(!fun_ret_flag) cout << "  jump %OrEnd_" << or_id << endl;
 
         cout << "%OrSkip_" << or_id << ":" << endl;
         cout << "  store 1, @Or_" << or_id << endl;
         cout << "  jump %OrEnd_" << or_id << endl;
 
         cout << "%OrEnd_" << or_id << ":" << endl;
+        fun_ret_flag=0;
         cout << "  %"<< current_id++ << " = load @Or_" << or_id << endl;
         nums.push_back("%"+to_string(current_id-1));
       } else {
@@ -708,6 +711,8 @@ class LAndExpAST: public BaseAST{
         cout << "  br " << nums.back() << ", %AndBody_" << and_id << ", %AndSkip_" << and_id << endl;
 
         cout << "%AndBody_" << and_id << ":" << endl;
+        fun_ret_flag=0;
+        block_name="And_Body" + to_string(and_id) + "_";
         eq_exp->KoopaIR();
         cout << "  %"<< current_id++ << " = ne 0, " << nums.back() << endl;
         nums.pop_back();
@@ -715,13 +720,14 @@ class LAndExpAST: public BaseAST{
         KoopaIR_logic_operands("and");
         cout << "  store " << nums.back() << ", @And_" << and_id << endl;
         nums.pop_back();
-        cout << "  jump %AndEnd_" << and_id << endl;
+        if(!fun_ret_flag) cout << "  jump %AndEnd_" << and_id << endl;
 
         cout << "%AndSkip_" << and_id << ":" << endl;
         cout << "  store 0, @And_" << and_id << endl;
         cout << "  jump %AndEnd_" << and_id << endl;
 
         cout << "%AndEnd_" << and_id << ":" << endl;
+        fun_ret_flag=0;
         cout << "  %"<< current_id++ << " = load @And_" << and_id << endl;
         nums.push_back("%"+to_string(current_id-1));
       } else {
