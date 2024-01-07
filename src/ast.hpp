@@ -438,11 +438,11 @@ class StmtAST : public BaseAST {
       while_stack.pop_back();
       fun_ret_flag=0;
     } else if(break_){
-      if(fun_ret_flag) return;
+      // if(fun_ret_flag) return;
       cout << "  jump %WhileEnd_" << while_stack.back() << endl;
       fun_ret_flag=1;
     } else if(continue_){
-      if(fun_ret_flag) return;
+      // if(fun_ret_flag) return;
       cout << "  jump %While_" << while_stack.back() << endl;
       fun_ret_flag=1;
     }
