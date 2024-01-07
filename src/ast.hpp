@@ -25,6 +25,8 @@ static deque<string> block_stack;
 
 static int fun_ret_flag=0;
 
+#define FUNCTYPE 22 // 函数类型
+
 // 用于计算的操作符到 Koopa IR 指令的映射
 static unordered_map<char, string> CalOp2Instruct={
   {'+', "add"},
@@ -93,6 +95,28 @@ inline vector<string> get_target_ident(string ident)
   return ret;
 }
 
+inline void enter_block()
+{
+  unordered_map<string, int> *symbol_table=new unordered_map<string, int>;
+  unordered_map<string, string> *symbol_type=new unordered_map<string, string>;
+  symbol_table_stack.push_back(symbol_table);
+  symbol_type_stack.push_back(symbol_type);
+  if(block_name!="") 
+  {
+    block_stack.push_back(block_name);
+    block_name="";
+  }
+  else block_stack.push_back("Block_"+to_string(block_id++)+"_");
+}
+inline void exit_block()
+{
+  free(symbol_table_stack.back());
+  symbol_table_stack.pop_back();
+  free(symbol_type_stack.back());
+  symbol_type_stack.pop_back();
+  block_stack.pop_back();
+}
+
 // 所有 AST 的基类
 class BaseAST {
  public:
@@ -106,50 +130,90 @@ class BaseAST {
 class CompUnitAST : public BaseAST {
  public:
   // 用智能指针管理对象
-  unique_ptr<BaseAST> func_def;
+  unique_ptr<vector<unique_ptr<BaseAST>>> comp_unit_item_list;
 
   void Dump() const override {
-    cout << "CompUnitAST { ";
-    func_def->Dump();
-    cout << " }";
+    return;
   }
   void KoopaIR() const override {
-    func_def->KoopaIR();
+    enter_block();
+
+    // 声明库函数
+    std::cout << "decl @getint(): i32\n" \
+                "decl @getch(): i32\n" \
+                "decl @getarray(*i32): i32\n" \
+                "decl @putint(i32)\n" \
+                "decl @putch(i32)\n" \
+                "decl @putarray(i32, *i32)\n" \
+                "decl @starttime()\n" \
+                "decl @stoptime()\n" << std::endl;
+    symbol_table_stack[0]->emplace("getint", FUNCTYPE);
+    symbol_type_stack[0]->emplace("getint", "Func_int");
+    symbol_table_stack[0]->emplace("getch", FUNCTYPE);
+    symbol_type_stack[0]->emplace("getch", "Func_int");
+    symbol_table_stack[0]->emplace("getarray", FUNCTYPE);
+    symbol_type_stack[0]->emplace("getarray", "Func_int");
+    symbol_table_stack[0]->emplace("putint", FUNCTYPE);
+    symbol_type_stack[0]->emplace("putint", "Func_void");
+    symbol_table_stack[0]->emplace("putch", FUNCTYPE);
+    symbol_type_stack[0]->emplace("putch", "Func_void");
+    symbol_table_stack[0]->emplace("putarray", FUNCTYPE);
+    symbol_type_stack[0]->emplace("putarray", "Func_void");
+    symbol_table_stack[0]->emplace("starttime", FUNCTYPE);
+    symbol_type_stack[0]->emplace("starttime", "Func_void");
+    symbol_table_stack[0]->emplace("stoptime", FUNCTYPE);
+    symbol_type_stack[0]->emplace("stoptime", "Func_void");
+
+    for(auto &i:*comp_unit_item_list){
+      i->KoopaIR();
+      cout<<endl;
+      current_id=0;
+      nums.clear();
+    }
+    exit_block();
   }
   int Calculate() const override {
     return 0;
   }
 };
 
-class FuncDefAST : public BaseAST {
+class CompUnitItemAST : public BaseAST {
  public:
-  unique_ptr<BaseAST> func_type;
-  string ident;
-  unique_ptr<BaseAST> block;
+  unique_ptr<BaseAST> func_def;
 
   void Dump() const override {
-    cout << "FuncDefAST { ";
-    func_type->Dump();
-    cout << ", " << ident << ", ";
-    block->Dump();
-    cout << " }";
+    return;
   }
   void KoopaIR() const override {
-    cout << "fun @"<<ident<<"(): ";
-    func_type->KoopaIR();
-    cout << " {\n";
-    cout << "%entry:\n";
-    block_name="entry_";
-    fun_ret_flag=0;
-    block->KoopaIR();
-    if(fun_ret_flag==0)
-    {
-      cout<<"  ret"<<endl;
+    if(func_def){
+      func_def->KoopaIR();
     }
-    cout << "}";
   }
   int Calculate() const override {
     return 0;
+  }
+};
+
+class FuncFParamAST : public BaseAST {
+ public:
+  unique_ptr<BaseAST> b_type;
+  string ident;
+
+  void Dump() const override {
+    return;
+  }
+  void KoopaIR() const override {
+    cout << "@" << ident << ": i32";
+  }
+  int Calculate() const override {
+    return 0;
+  }
+  void Alloc() const {
+    string target_ident = block_stack.back() + ident ;
+    cout << "  @" << target_ident << " = alloc i32" << endl;
+    symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
+    symbol_type_stack.back()->emplace(target_ident, "var");
+    cout<<"  store @"<<ident<<", @"<<target_ident<<endl;
   }
 };
 
@@ -161,7 +225,59 @@ class FuncTypeAST : public BaseAST {
     cout << "FuncDefAST { \"int\" }";
   }
   void KoopaIR() const override {
-    cout << type;
+    if(type=="int") cout<<": i32";
+    else cout<<" ";
+  }
+  int Calculate() const override {
+    return 0;
+  }
+};
+
+class FuncDefAST : public BaseAST {
+ public:
+  unique_ptr<BaseAST> func_type;
+  string ident;
+  unique_ptr<BaseAST> block;
+  unique_ptr<vector<unique_ptr<BaseAST>>> func_f_param_list;
+
+  void Dump() const override {
+    cout << "FuncDefAST { ";
+    func_type->Dump();
+    cout << ", " << ident << ", ";
+    block->Dump();
+    cout << " }";
+  }
+  void KoopaIR() const override {
+    const string& type = dynamic_cast<FuncTypeAST*>(func_type.get())->type;
+    symbol_table_stack[0]->emplace(ident, FUNCTYPE);
+    symbol_type_stack[0]->emplace(ident, "Func_"+type);
+    block_name="FUNC_"+ident+"_";
+    enter_block();
+    
+    cout<< "fun @"<<ident<<"(";
+    int i=0, sz=func_f_param_list->size();
+    for(auto &param:*func_f_param_list){
+      param->KoopaIR();
+      if(i!=sz-1) cout<<", ";
+      i++;
+    }
+    cout<<")";
+    func_type->KoopaIR();
+    cout << " {\n";
+    cout << "%entry:\n";
+    fun_ret_flag=0;
+
+    for(auto& func_f_param: *func_f_param_list) 
+      dynamic_cast<FuncFParamAST*>(func_f_param.get())->Alloc();
+    
+    block->KoopaIR();
+    if(fun_ret_flag==0)
+    {
+      if(type=="void") cout<<"  ret"<<endl;
+      else cout<<"  ret 0"<<endl;
+    }
+    cout << "}\n";
+    exit_block();
   }
   int Calculate() const override {
     return 0;
@@ -211,26 +327,14 @@ class BlockAST : public BaseAST {
   }
   void KoopaIR() const override {
     if(!block_item_list) return;
-    unordered_map<string, int> *symbol_table=new unordered_map<string, int>;
-    unordered_map<string, string> *symbol_type=new unordered_map<string, string>;
-    string block_id_str = to_string(block_id++);
-    symbol_table_stack.push_back(symbol_table);
-    symbol_type_stack.push_back(symbol_type);
-    if(block_name!="") 
-    {
-      block_stack.push_back(block_name);
-      block_name="";
-    }
-    else block_stack.push_back("Block_"+block_id_str+"_");
+    enter_block();
+    
     for(auto &i:*block_item_list){
       if(fun_ret_flag) break;
       i->KoopaIR();
     }
-    symbol_table_stack.pop_back();
-    free(symbol_table);
-    symbol_type_stack.pop_back();
-    free(symbol_type);
-    block_stack.pop_back();
+    exit_block();
+    
   }
   int Calculate() const override {
     return 0;
@@ -514,21 +618,16 @@ class UnaryExpAST : public BaseAST {
   unique_ptr<BaseAST> primary_exp;
   char unary_op;
   unique_ptr<BaseAST> unary_exp;
+  string ident;
+  unique_ptr<vector<unique_ptr<BaseAST>>> func_r_param_list;
 
   void Dump() const override {
-    cout << "UnaryExpAST { ";
-    if (primary_exp) {
-      primary_exp->Dump();
-    } else {
-      cout << unary_op;
-      unary_exp->Dump();
-    }
-    cout << " }";
+    return;
   }
   void KoopaIR() const override {
     if (primary_exp) {
       primary_exp->KoopaIR();
-    } else {
+    } else if(unary_exp) {
       unary_exp->KoopaIR();
       switch(unary_op)
       {
@@ -538,6 +637,31 @@ class UnaryExpAST : public BaseAST {
         case '!':
           KoopaIR_one_operands("eq 0,");
           break;
+      }
+    } else if(ident!=""){
+      int cnt=0, sz=func_r_param_list->size();
+      for(auto &param:*func_r_param_list){
+        param->KoopaIR();
+        cnt++;
+      }
+
+      if(symbol_type_stack[0]->at(ident)=="Func_int")
+        cout << "  %"<< current_id << " = call @" << ident << "(";
+      else
+        cout << "  call @" << ident << "(";
+      
+      for(int i=sz-1;i>=0;i--)
+      {
+        cout << nums[nums.size()-1-i];
+        if(i!=0) cout<<", ";
+      }
+      for(int i=sz-1;i>=0;i--) nums.pop_back();
+      cout<<")"<<endl;
+
+      if(symbol_type_stack[0]->at(ident)=="Func_int")
+      {
+        nums.push_back("%"+to_string(current_id));
+        current_id++;
       }
     }
   }
