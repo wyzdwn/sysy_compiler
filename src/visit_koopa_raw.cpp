@@ -35,12 +35,11 @@ unordered_map<string, int> reg_used; // 记录每个寄存器是否被使用过�
 
 /********************************lv4 start**********************************/
 
-static unordered_map<koopa_raw_value_t, string> loc; // 有返回值的语句在栈中的位置
+static unordered_map<koopa_raw_value_t, int> loc; // 有返回值的语句在栈中的位置
 static int stack_frame_length = 0; // 栈帧长度
 static int stack_frame_used = 0; // 已经使用的栈帧长度
 
 /*********************************lv4 end***********************************/
-
 
 // 返回没被使用过的第一个寄存器
 inline string get_reg()
@@ -61,6 +60,23 @@ inline void free_reg()
   reg_used[reg] = 0;
 }
 
+// 将reg中的值存到对应value所在的位置
+inline void save_reg(const koopa_raw_value_t &value, const std::string &reg) {
+  string tmp_reg=get_reg();
+  cout<<"  li "<<tmp_reg<<", "<<loc[value]<<endl;
+  cout<<"  add "<<tmp_reg<<", "<<tmp_reg<<", sp"<<endl;
+  cout<<"  sw "<<reg<<", 0("<<tmp_reg<<")"<<endl;
+  reg_used[tmp_reg] = 0;
+}
+
+inline void load_reg(const koopa_raw_value_t &value, const std::string &reg) {
+  string tmp_reg=get_reg();
+  cout<<"  li "<<tmp_reg<<", "<<loc[value]<<endl;
+  cout<<"  add "<<tmp_reg<<", "<<tmp_reg<<", sp"<<endl;
+  cout<<"  lw "<<reg<<", 0("<<tmp_reg<<")"<<endl;
+  reg_used[tmp_reg] = 0;
+}
+
 // 给定riscv的运算符（op），以及koopaIR的两个操作数（lhs, rhs），生成对应的汇编代码
 inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, string op, const koopa_raw_value_t &value)
 {
@@ -73,9 +89,9 @@ inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, st
   free_reg();
   nums.push_back(target_reg);
 
-  loc[value] = to_string(stack_frame_used) + "(sp)";
+  loc[value] = stack_frame_used;
   stack_frame_used += 4;
-  cout<<"  sw "<<target_reg<<", "<<loc[value]<<endl;
+  save_reg(value, target_reg);
   free_reg();
 }
 
@@ -175,7 +191,7 @@ void Visit(const koopa_raw_value_t &value) {
   if(loc.find(value) != loc.end())
   {
     string target_reg = get_reg();
-    cout<<"  lw "<<target_reg<<", "<<loc[value]<<endl; // 把变量的值放到寄存器里
+    load_reg(value, target_reg); // 把变量的值放到寄存器里
     nums.push_back(target_reg);
     return;
   }
@@ -195,7 +211,7 @@ void Visit(const koopa_raw_value_t &value) {
       break;
     case KOOPA_RVT_ALLOC:
       // 访问 alloc 指令
-      loc[value] = to_string(stack_frame_used) + "(sp)";
+      loc[value] = stack_frame_used;
       stack_frame_used += 4;
       break;
     case KOOPA_RVT_LOAD:
@@ -228,6 +244,13 @@ void Visit(const koopa_raw_return_t &ret) {
   Visit(ret.value);
   cout<<"  mv a0, "<<nums.back()<<endl;
   free_reg();
+  // 释放栈帧
+  string tmp_reg = get_reg();
+  if (stack_frame_length != 0) {
+    cout<<"  li "<<tmp_reg<<", "<<stack_frame_length<<endl;
+    cout<<"  add sp, sp, "<<tmp_reg<<endl;
+  }
+  reg_used[tmp_reg] = 0;
   cout<<"  ret\n";
 }
 
@@ -266,7 +289,7 @@ void Visit(const koopa_raw_binary_t &binary, const koopa_raw_value_t &value) {
     binary_two_operands(binary.lhs, binary.rhs, binary_op_map[binary.op], value);
     Visit(value);
   }
-  cout<<"  sw "<<nums.back()<<", "<<loc[value]<<endl;
+  save_reg(value, nums.back());
   free_reg();
 }
 
@@ -275,11 +298,11 @@ void Visit(const koopa_raw_load_t &load, const koopa_raw_value_t &value) {
   // ...
   // 访问 load 指令
   string target_reg = get_reg();
-  cout<<"  lw "<<target_reg<<", "<<loc[load.src]<<endl;
+  load_reg(load.src, target_reg);
   nums.push_back(target_reg);
-  loc[value] = to_string(stack_frame_used) + "(sp)";
+  loc[value] = stack_frame_used;
   stack_frame_used += 4;
-  cout<<"  sw "<<target_reg<<", "<<loc[value]<<endl;
+  save_reg(value, target_reg);
   free_reg();
 }
 
@@ -288,7 +311,7 @@ void Visit(const koopa_raw_store_t &store) {
   // ...
   // 访问 store 指令
   Visit(store.value);
-  cout<<"  sw "<<nums.back()<<", "<<loc[store.dest]<<endl;
+  save_reg(store.dest, nums.back());
   free_reg();
 }
 
