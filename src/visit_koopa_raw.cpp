@@ -1,6 +1,6 @@
 #include <iostream>
 #include "koopa.h"
-#include <string>
+#include <cstring>
 #include <sstream>
 #include <cassert>
 #include "visit_koopa_raw.hpp"
@@ -69,9 +69,9 @@ inline void binary_two_operands(koopa_raw_value_t lhs, koopa_raw_value_t rhs, st
   Visit(rhs);
   string target_reg = get_reg();
   cout<<"  "<<op<<" "<<target_reg<<", "<<nums[nums.size()-2]<<", "<<nums.back()<<endl;
+  free_reg();
+  free_reg();
   nums.push_back(target_reg);
-  free_reg();
-  free_reg();
 
   loc[value] = to_string(stack_frame_used) + "(sp)";
   stack_frame_used += 4;
@@ -145,12 +145,9 @@ void Visit(const koopa_raw_function_t &func) {
         var_cnt--;
     }
   }
-  // cout<<"++++"<<var_cnt<<endl;
   stack_frame_length = var_cnt * 4;
-  // cout<<"++++"<<stack_frame_length<<endl;
   // 将栈帧长度对齐到 16
   stack_frame_length = (stack_frame_length + 15) & (~15);
-  // cout<<"++++"<<stack_frame_length<<endl;
 
   if (stack_frame_length > 0 && stack_frame_length < 2048)
     cout << "  addi sp, sp, -" << stack_frame_length << endl;
@@ -165,6 +162,10 @@ void Visit(const koopa_raw_basic_block_t &bb) {
   // 执行一些其他的必要操作
   // ...
   // 访问所有指令
+  // 如果bb->name是entry，那么就不用输出标签
+  
+  if(strncmp(bb->name+1, "entry", 5))
+    cout << bb->name+1 << ":" << endl;
   Visit(bb->insts);
 }
 
@@ -189,17 +190,29 @@ void Visit(const koopa_raw_value_t &value) {
       Visit(kind.data.integer);
       break;
     case KOOPA_RVT_BINARY:
+      // 访问 binary 指令
       Visit(kind.data.binary, value);
       break;
     case KOOPA_RVT_ALLOC:
+      // 访问 alloc 指令
       loc[value] = to_string(stack_frame_used) + "(sp)";
       stack_frame_used += 4;
       break;
     case KOOPA_RVT_LOAD:
+      // 访问 load 指令
       Visit(kind.data.load, value);
       break;
     case KOOPA_RVT_STORE:
+      // 访问 store 指令
       Visit(kind.data.store);
+      break;
+    case KOOPA_RVT_BRANCH:
+      // 访问 branch 指令
+      Visit(kind.data.branch);
+      break;
+    case KOOPA_RVT_JUMP:
+      // 访问 jump 指令
+      Visit(kind.data.jump);
       break;
     default:
       // 其他类型暂时遇不到
@@ -215,7 +228,7 @@ void Visit(const koopa_raw_return_t &ret) {
   Visit(ret.value);
   cout<<"  mv a0, "<<nums.back()<<endl;
   free_reg();
-  cout<<"  ret";
+  cout<<"  ret\n";
 }
 
 void Visit(const koopa_raw_integer_t &integer) {
@@ -230,6 +243,7 @@ void Visit(const koopa_raw_integer_t &integer) {
   string target_reg = get_reg();
   cout<<"  li "<<target_reg<<", "<<integer.value<<endl;
   nums.push_back(target_reg);
+  reg_used[target_reg] = 0;
 }
 
 void Visit(const koopa_raw_binary_t &binary, const koopa_raw_value_t &value) {
@@ -277,4 +291,26 @@ void Visit(const koopa_raw_store_t &store) {
   Visit(store.value);
   cout<<"  sw "<<nums.back()<<", "<<loc[store.dest]<<endl;
   free_reg();
+}
+
+void Visit(const koopa_raw_branch_t &branch) {
+  // 执行一些其他的必要操作
+  // ...
+  // 访问 branch 指令
+  Visit(branch.cond);
+  
+  // 此处不直接跳转至true_bb，因为bnez的跳转距离有限，但是j的跳转距离非常大
+  // 所以先跳转到TO_true_bb，这里有且仅有“j true_bb"，再跳转到true_bb
+  cout<<"  bnez "<<nums.back()<<", TO_"<<branch.true_bb->name+1<<endl;
+  free_reg();
+  cout<<"  j "<<branch.false_bb->name+1<<endl;
+  cout<<"TO_"<<branch.true_bb->name+1<<":"<<endl;
+  cout<<"  j "<<branch.true_bb->name+1<<endl;
+}
+
+void Visit(const koopa_raw_jump_t &jump) {
+  // 执行一些其他的必要操作
+  // ...
+  // 访问 jump 指令
+  cout<<"  j "<<jump.target->name+1<<endl;
 }

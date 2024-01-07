@@ -30,3 +30,9 @@ void Visit(const koopa_raw_load_t &load, const koopa_raw_value_t &value);
 
 // 访问 store 指令
 void Visit(const koopa_raw_store_t &store);
+
+// 访问 branch 指令
+void Visit(const koopa_raw_branch_t &branch);
+
+// 访问 jump 指令
+void Visit(const koopa_raw_jump_t &jump);
