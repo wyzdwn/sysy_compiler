@@ -11,6 +11,7 @@
 using namespace std;
 
 static int current_id = 0;
+static int block_id = 0;
 static int if_id = 0;
 static int or_id = 0;
 static int and_id = 0;
@@ -72,7 +73,7 @@ inline vector<string> get_target_ident(string ident)
 {
   vector<string> ret;
   for(int i=symbol_table_stack.size()-1; i>=0; i--){
-    string target_ident = block_stack[i] + ident + "_" + to_string(i+1);
+    string target_ident = block_stack[i] + ident ;
     if(symbol_table_stack[i]->find(target_ident)!=symbol_table_stack[i]->end()){
       ret.push_back(target_ident);
       ret.push_back(symbol_type_stack[i]->at(target_ident));
@@ -136,7 +137,6 @@ class FuncDefAST : public BaseAST {
     cout << " {\n";
     cout << "%entry:\n";
     fun_ret_flag=0;
-    block_stack.push_back(ident);
     block->KoopaIR();
     if(fun_ret_flag==0)
     {
@@ -209,8 +209,10 @@ class BlockAST : public BaseAST {
     if(!block_item_list) return;
     unordered_map<string, int> *symbol_table=new unordered_map<string, int>;
     unordered_map<string, string> *symbol_type=new unordered_map<string, string>;
+    string block_id_str = to_string(block_id++);
     symbol_table_stack.push_back(symbol_table);
     symbol_type_stack.push_back(symbol_type);
+    block_stack.push_back("Block_"+block_id_str+"_");
     for(auto &i:*block_item_list){
       if(fun_ret_flag) break;
       i->KoopaIR();
@@ -219,6 +221,7 @@ class BlockAST : public BaseAST {
     free(symbol_table);
     symbol_type_stack.pop_back();
     free(symbol_type);
+    block_stack.pop_back();
   }
   int Calculate() const override {
     return 0;
@@ -293,10 +296,8 @@ class OnlyIfAST: public BaseAST{
       nums.pop_back();
 
       cout << "%If_" << now_if << ":" << endl;
-      block_stack.push_back("If_"+to_string(now_if));
       fun_ret_flag=0;
       stmt->KoopaIR();
-      block_stack.pop_back();
       if(!fun_ret_flag) cout << "  jump %IfEnd_" << now_if << endl;
 
       cout << "%IfEnd_" << now_if << ":" <<endl;
@@ -330,17 +331,13 @@ class IfElseAST: public BaseAST{
       nums.pop_back();
 
       cout << "%If_" << now_if << ":" << endl;
-      block_stack.push_back("If_"+to_string(now_if));
       fun_ret_flag=0;
       if_stmt->KoopaIR();
-      block_stack.pop_back();
       if(!fun_ret_flag) cout << "  jump %IfEnd_" << now_if << endl;
 
       cout << "%Else_" << now_if << ":" <<endl;
-      block_stack.push_back("Else_"+to_string(now_if));
       fun_ret_flag=0;
       else_stmt->KoopaIR();
-      block_stack.pop_back();
       if(!fun_ret_flag) cout << "  jump %IfEnd_" << now_if << endl;
 
       cout << "%IfEnd_" << now_if << ":" <<endl;
@@ -891,7 +888,7 @@ class ConstDefAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      string target_ident = block_stack.back() + ident + "_" + to_string(symbol_table_stack.size());
+      string target_ident = block_stack.back() + ident ;
       symbol_table_stack.back()->emplace(target_ident, const_init_val->Calculate());
       symbol_type_stack.back()->emplace(target_ident, "const");
     }
@@ -974,7 +971,7 @@ class VarDefAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      string target_ident = block_stack.back() + ident + "_" + to_string(symbol_table_stack.size());
+      string target_ident = block_stack.back() + ident ;
       cout << "  @" << target_ident << " = alloc i32" << endl;
       symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
       symbol_type_stack.back()->emplace(target_ident, "var");
