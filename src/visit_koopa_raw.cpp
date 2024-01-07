@@ -243,7 +243,6 @@ void Visit(const koopa_raw_integer_t &integer) {
   string target_reg = get_reg();
   cout<<"  li "<<target_reg<<", "<<integer.value<<endl;
   nums.push_back(target_reg);
-  reg_used[target_reg] = 0;
 }
 
 void Visit(const koopa_raw_binary_t &binary, const koopa_raw_value_t &value) {
