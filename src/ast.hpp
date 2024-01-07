@@ -139,14 +139,14 @@ class CompUnitAST : public BaseAST {
     enter_block();
 
     // 声明库函数
-    std::cout << "decl @getint(): i32\n" \
+    cout << "decl @getint(): i32\n" \
                 "decl @getch(): i32\n" \
                 "decl @getarray(*i32): i32\n" \
                 "decl @putint(i32)\n" \
                 "decl @putch(i32)\n" \
                 "decl @putarray(i32, *i32)\n" \
                 "decl @starttime()\n" \
-                "decl @stoptime()\n" << std::endl;
+                "decl @stoptime()\n" << endl;
     symbol_table_stack[0]->emplace("getint", FUNCTYPE);
     symbol_type_stack[0]->emplace("getint", "Func_int");
     symbol_table_stack[0]->emplace("getch", FUNCTYPE);
@@ -180,6 +180,7 @@ class CompUnitAST : public BaseAST {
 class CompUnitItemAST : public BaseAST {
  public:
   unique_ptr<BaseAST> func_def;
+  unique_ptr<BaseAST> decl;
 
   void Dump() const override {
     return;
@@ -187,6 +188,9 @@ class CompUnitItemAST : public BaseAST {
   void KoopaIR() const override {
     if(func_def){
       func_def->KoopaIR();
+    }
+    else if(decl){
+      decl->KoopaIR();
     }
   }
   int Calculate() const override {
@@ -196,7 +200,7 @@ class CompUnitItemAST : public BaseAST {
 
 class FuncFParamAST : public BaseAST {
  public:
-  unique_ptr<BaseAST> b_type;
+  string b_type;
   string ident;
 
   void Dump() const override {
@@ -235,20 +239,16 @@ class FuncTypeAST : public BaseAST {
 
 class FuncDefAST : public BaseAST {
  public:
-  unique_ptr<BaseAST> func_type;
+  string func_type;
   string ident;
   unique_ptr<BaseAST> block;
   unique_ptr<vector<unique_ptr<BaseAST>>> func_f_param_list;
 
   void Dump() const override {
-    cout << "FuncDefAST { ";
-    func_type->Dump();
-    cout << ", " << ident << ", ";
-    block->Dump();
-    cout << " }";
+    return ;
   }
   void KoopaIR() const override {
-    const string& type = dynamic_cast<FuncTypeAST*>(func_type.get())->type;
+    const string& type = func_type;
     symbol_table_stack[0]->emplace(ident, FUNCTYPE);
     symbol_type_stack[0]->emplace(ident, "Func_"+type);
     block_name="FUNC_"+ident+"_";
@@ -262,7 +262,8 @@ class FuncDefAST : public BaseAST {
       i++;
     }
     cout<<")";
-    func_type->KoopaIR();
+    if(type=="int") cout<<": i32";
+    else cout<<" ";
     cout << " {\n";
     cout << "%entry:\n";
     fun_ret_flag=0;
@@ -1046,18 +1047,11 @@ class BTypeAST: public BaseAST{
 
 class ConstDeclAST: public BaseAST{
   public:
-    unique_ptr<BaseAST> b_type;
+    string b_type;
     unique_ptr<vector<unique_ptr<BaseAST>>> const_def_list;
 
     void Dump() const override {
-      cout << "ConstDecl { ";
-      b_type->Dump();
-      cout << ", ";
-      for(auto &i:*const_def_list){
-        i->Dump();
-        cout << ", ";
-      }
-      cout << " }";
+      return;
     }
     void KoopaIR() const override {
       for(auto &i:*const_def_list){
@@ -1127,18 +1121,11 @@ class ConstExpAST: public BaseAST{
 
 class VarDeclAST: public BaseAST{
   public:
-    unique_ptr<BaseAST> b_type;
+    string b_type;
     unique_ptr<vector<unique_ptr<BaseAST>>> var_def_list;
 
     void Dump() const override {
-      cout << "VarDecl { ";
-      b_type->Dump();
-      cout << ", ";
-      for(auto &i:*var_def_list){
-        i->Dump();
-        cout << ", ";
-      }
-      cout << " }";
+      return ;
     }
     void KoopaIR() const override {
       for(auto &i:*var_def_list){
@@ -1166,13 +1153,20 @@ class VarDefAST: public BaseAST{
     }
     void KoopaIR() const override {
       string target_ident = block_stack.back() + ident ;
-      cout << "  @" << target_ident << " = alloc i32" << endl;
+      if(symbol_table_stack.size()==1) cout<<"global "<<"@"<<target_ident<<" = alloc i32, ";
+      else cout << "  @" << target_ident << " = alloc i32";
       symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
       symbol_type_stack.back()->emplace(target_ident, "var");
-      if(init_val) {
-        init_val->KoopaIR();
-        cout << "  store " << nums.back() << ", @" << target_ident << endl;
-        nums.pop_back();
+      if(symbol_table_stack.size()==1){
+        if(init_val) cout << init_val->Calculate() << endl;
+        else cout<<"zeroinit"<<endl;
+      }
+      else{
+          if(init_val) {
+          init_val->KoopaIR();
+          cout << "  store " << nums.back() << ", @" << target_ident << endl;
+          nums.pop_back();
+        }
       }
     }
     int Calculate() const override {

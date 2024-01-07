@@ -40,15 +40,15 @@ using namespace std;
 
 // lexer 返回的所有 token 种类的声明
 // 注意 IDENT 和 INT_CONST 会返回 token 的值, 分别对应 str_val 和 int_val
-%token INT RETURN AND OR CONST IF ELSE WHILE BREAK CONTINUE VOID
-%token <str_val> IDENT EQOP RELOP
+%token RETURN AND OR CONST IF ELSE WHILE BREAK CONTINUE
+%token <str_val> IDENT EQOP RELOP TYPE
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp Number UnaryExp AddExp MulExp LOrExp LAndExp EqExp RelExp
+%type <ast_val> FuncDef Block Stmt Exp PrimaryExp Number UnaryExp AddExp MulExp LOrExp LAndExp EqExp RelExp
 %type <char_val> UnaryOp AddOp MulOp
 
-%type <ast_val> Decl ConstDecl BType ConstDef ConstInitVal ConstExp BlockItem LVal
+%type <ast_val> Decl ConstDecl ConstDef ConstInitVal ConstExp BlockItem LVal
 %type <ast_val> VarDecl VarDef InitVal
 
 %type <vec_val> BlockItemList ConstDefList VarDefList
@@ -94,6 +94,11 @@ CompUnitItem
     ast->func_def = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
+  | Decl {
+    auto ast = new CompUnitItemAST();
+    ast->decl = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
   ;
 
 // FuncDef ::= FuncType IDENT '(' ')' Block;
@@ -107,26 +112,12 @@ CompUnitItem
 // 虽然此处你看不出用 unique_ptr 和手动 delete 的区别, 但当我们定义了 AST 之后
 // 这种写法会省下很多内存管理的负担
 FuncDef
-  : FuncType IDENT '(' FuncFParams ')' Block {
+  : TYPE IDENT '(' FuncFParams ')' Block {
     auto ast = new FuncDefAST();
-    ast->func_type = unique_ptr<BaseAST>($1);
+    ast->func_type = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
     ast->func_f_param_list = unique_ptr<vector<unique_ptr<BaseAST> > >($4);
     ast->block = unique_ptr<BaseAST>($6);
-    $$ = ast;
-  }
-  ;
-
-// 同上, 不再解释
-FuncType
-  : INT {
-    auto ast = new FuncTypeAST();
-    ast->type = "int";
-    $$ = ast;
-  }
-  | VOID {
-    auto ast = new FuncTypeAST();
-    ast->type = "void";
     $$ = ast;
   }
   ;
@@ -149,9 +140,9 @@ FuncFParams
   ;
 
 FuncFParam
-  : BType IDENT {
+  : TYPE IDENT {
     auto ast = new FuncFParamAST();
-    ast->b_type = unique_ptr<BaseAST>($1);
+    ast->b_type = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
     $$ = ast;
   }
@@ -497,9 +488,9 @@ Decl
   ;
 
 ConstDecl
-  : CONST BType ConstDefList ';'{
+  : CONST TYPE ConstDefList ';'{
     auto ast = new ConstDeclAST();
-    ast->b_type = unique_ptr<BaseAST>($2);
+    ast->b_type = *unique_ptr<string>($2);
     ast->const_def_list = unique_ptr<vector<unique_ptr<BaseAST>>>($3);
     $$ = ast;
   }
@@ -515,14 +506,6 @@ ConstDefList
     auto vec = $1;
     vec->push_back(unique_ptr<BaseAST>($3));
     $$ = vec;
-  }
-  ;
-
-BType
-  : INT{
-    auto ast = new BTypeAST();
-    ast->type = "int";
-    $$ = ast;
   }
   ;
 
@@ -552,9 +535,9 @@ ConstExp
   ;
 
 VarDecl
-  : BType VarDefList ';'{
+  : TYPE VarDefList ';'{
     auto ast = new VarDeclAST();
-    ast->b_type = unique_ptr<BaseAST>($1);
+    ast->b_type = *unique_ptr<string>($1);
     ast->var_def_list = unique_ptr<vector<unique_ptr<BaseAST>>>($2);
     $$ = ast;
   }

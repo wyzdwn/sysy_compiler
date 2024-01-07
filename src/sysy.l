@@ -38,7 +38,6 @@ EqOp          [!=]=
 {LineComment}   { /* 忽略, 不做任何操作 */ }
 {BlockComment}  { /* 忽略, 不做任何操作 */ }
 
-"int"           { return INT; }
 "return"        { return RETURN; }
 "&&"            { return AND; }
 "||"            { return OR; }
@@ -48,7 +47,9 @@ EqOp          [!=]=
 "while"         { return WHILE; }
 "break"         { return BREAK; }
 "continue"      { return CONTINUE; }
-"void"          { return VOID; }
+
+"void"          { yylval.str_val = new string(yytext); return TYPE; }
+"int"           { yylval.str_val = new string(yytext); return TYPE; }
 
 {Identifier}    { yylval.str_val = new string(yytext); return IDENT; }
 
