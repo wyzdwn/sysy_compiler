@@ -662,8 +662,9 @@ class LOrExpAST: public BaseAST{
         if(!fun_ret_flag) cout << "  jump %OrEnd_" << or_id << endl;
 
         cout << "%OrSkip_" << or_id << ":" << endl;
+        fun_ret_flag=0;
         cout << "  store 1, @Or_" << or_id << endl;
-        cout << "  jump %OrEnd_" << or_id << endl;
+        if(!fun_ret_flag) cout << "  jump %OrEnd_" << or_id << endl;
 
         cout << "%OrEnd_" << or_id << ":" << endl;
         fun_ret_flag=0;
@@ -677,7 +678,7 @@ class LOrExpAST: public BaseAST{
       if(lor_exp){
         int lor_exp_value = lor_exp->Calculate();
         if(lor_exp_value) return 1;
-        else return land_exp->Calculate();
+        else return !!land_exp->Calculate();
       }
       else{
         return land_exp->Calculate();
@@ -725,8 +726,9 @@ class LAndExpAST: public BaseAST{
         if(!fun_ret_flag) cout << "  jump %AndEnd_" << and_id << endl;
 
         cout << "%AndSkip_" << and_id << ":" << endl;
+        fun_ret_flag=0;
         cout << "  store 0, @And_" << and_id << endl;
-        cout << "  jump %AndEnd_" << and_id << endl;
+        if(!fun_ret_flag) cout << "  jump %AndEnd_" << and_id << endl;
 
         cout << "%AndEnd_" << and_id << ":" << endl;
         fun_ret_flag=0;
@@ -740,7 +742,7 @@ class LAndExpAST: public BaseAST{
       if(land_exp){
         int land_exp_value = land_exp->Calculate();
         if(!land_exp_value) return 0;
-        else return eq_exp->Calculate();
+        else return !!eq_exp->Calculate();
       }
       else{
         return eq_exp->Calculate();
