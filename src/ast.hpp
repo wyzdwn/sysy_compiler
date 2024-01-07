@@ -424,6 +424,7 @@ class StmtAST : public BaseAST {
       cout<<"  jump %While_"<<now_while<<endl;
       cout<<"%While_"<<now_while<<":"<<endl;
       fun_ret_flag=0;
+      block_name="While_" + to_string(now_while) + "_";
       exp->KoopaIR();
       cout << "  br " << nums.back() << ", %WhileBody_" << now_while << ", %WhileEnd_" << now_while << endl; 
       nums.pop_back();
