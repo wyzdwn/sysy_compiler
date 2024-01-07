@@ -419,8 +419,8 @@ class StmtAST : public BaseAST {
       if_stmt->KoopaIR();
     } else if(while_stmt){
       if(fun_ret_flag) return;
-      now_while=while_id++;
       int save_while=now_while;
+      now_while=while_id++;
       cout<<"  jump %While_"<<now_while<<endl;
       cout<<"%While_"<<now_while<<":"<<endl;
       fun_ret_flag=0;
