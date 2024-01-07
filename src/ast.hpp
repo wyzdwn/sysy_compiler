@@ -676,7 +676,7 @@ class LOrExpAST: public BaseAST{
     int Calculate() const override {
       if(lor_exp){
         int lor_exp_value = lor_exp->Calculate();
-        if(lor_exp_value==1) return 1;
+        if(lor_exp_value) return 1;
         else return land_exp->Calculate();
       }
       else{
@@ -739,7 +739,7 @@ class LAndExpAST: public BaseAST{
     int Calculate() const override {
       if(land_exp){
         int land_exp_value = land_exp->Calculate();
-        if(land_exp_value==0) return 0;
+        if(!land_exp_value) return 0;
         else return eq_exp->Calculate();
       }
       else{
