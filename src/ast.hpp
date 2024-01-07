@@ -16,10 +16,12 @@ static string  block_name = "";
 static int if_id = 0;
 static int or_id = 0;
 static int and_id = 0;
+static int while_id = 0;
 static deque<string> nums;
 static deque<unordered_map<string, int>*> symbol_table_stack;
 static deque<unordered_map<string, string>*> symbol_type_stack;
 static deque<string> block_stack;
+static deque<int> while_stack;
 
 static int fun_ret_flag=0;
 
@@ -365,6 +367,9 @@ class StmtAST : public BaseAST {
   unique_ptr<BaseAST> block;
   unique_ptr<BaseAST> exp_only;
   unique_ptr<BaseAST> if_stmt;
+  unique_ptr<BaseAST> while_stmt;
+  bool break_;
+  bool continue_;
   bool return_;
 
   void Dump() const override {
@@ -412,6 +417,34 @@ class StmtAST : public BaseAST {
       nums.pop_back();
     } else if(if_stmt){
       if_stmt->KoopaIR();
+    } else if(while_stmt){
+      if(fun_ret_flag) return;
+      int now_while=while_id++;
+      cout<<"  jump %While_"<<now_while<<endl;
+      cout<<"%While_"<<now_while<<":"<<endl;
+      while_stack.push_back(now_while);
+      fun_ret_flag=0;
+      exp->KoopaIR();
+      cout << "  br " << nums.back() << ", %WhileBody_" << now_while << ", %WhileEnd_" << now_while << endl; 
+      nums.pop_back();
+
+      cout << "%WhileBody_" << now_while << ":" << endl;
+      fun_ret_flag=0;
+      block_name="WhileBody_" + to_string(now_while) + "_";
+      while_stmt->KoopaIR();
+      if(!fun_ret_flag) cout << "  jump %While_" << now_while << endl;
+
+      cout << "%WhileEnd_" << now_while << ":" <<endl;
+      while_stack.pop_back();
+      fun_ret_flag=0;
+    } else if(break_){
+      if(fun_ret_flag) return;
+      cout << "  jump %WhileEnd_" << while_stack.back() << endl;
+      fun_ret_flag=1;
+    } else if(continue_){
+      if(fun_ret_flag) return;
+      cout << "  jump %While_" << while_stack.back() << endl;
+      fun_ret_flag=1;
     }
     
     
