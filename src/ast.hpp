@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 
 using namespace std;
 
@@ -285,9 +286,27 @@ class FuncDefAST : public BaseAST {
   }
 };
 
+class ExpAST : public BaseAST {
+ public:
+  unique_ptr<BaseAST> lor_exp;
+
+  void Dump() const override {
+    cout << "EXPAST { ";
+    lor_exp->Dump();
+    cout << " }";
+  }
+  void KoopaIR() const override {
+    lor_exp->KoopaIR();
+  }
+  int Calculate() const override {
+    return lor_exp->Calculate();
+  }
+};
+
 class LValAST: public BaseAST{
   public:
     string ident;
+    unique_ptr<vector<unique_ptr<BaseAST>>> index_list;
 
     void Dump() const override {
       cout << "LVal { ";
@@ -295,17 +314,38 @@ class LValAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      string target_ident = get_target_ident(ident)[0];
-      string target_type = get_target_ident(ident)[1];
-      string target_value = get_target_ident(ident)[2];
-      if(target_ident=="") throw("undefined variable: " + ident);
-      if(target_type=="const"){
-        nums.push_back(target_value);
-      }
-      else{
-        cout << "  %"<< current_id << " = load @" << target_ident << endl;
+      if(index_list->size()){
+        // 数组
+        for (int i = 0; i < index_list->size(); i++) {
+          const auto& exp_index = (*index_list)[i];
+          dynamic_cast<ExpAST*>(exp_index.get())->KoopaIR();
+          cout << "  %" << current_id << " = getelemptr ";
+          if(i == 0) cout << "@" << get_target_ident(ident)[0];
+          else cout <<nums[nums.size()-2]; // 上一个 getelemptr 的结果
+          cout << ", " << nums.back() << endl;
+          nums.pop_back();
+          if(i!=0) nums.pop_back();
+          nums.push_back("%"+to_string(current_id));
+          current_id++;
+        }
+        cout << "  %" << current_id << " = load " << nums.back() << endl;
+        nums.pop_back();
         nums.push_back("%"+to_string(current_id));
         current_id++;
+      } else {
+        // 变量
+        string target_ident = get_target_ident(ident)[0];
+        string target_type = get_target_ident(ident)[1];
+        string target_value = get_target_ident(ident)[2];
+        if(target_ident=="") throw("undefined variable: " + ident);
+        if(target_type=="const"){
+          nums.push_back(target_value);
+        }
+        else{
+          cout << "  %"<< current_id << " = load @" << target_ident << endl;
+          nums.push_back("%"+to_string(current_id));
+          current_id++;
+        }
       }
     }
     int Calculate() const override {
@@ -502,12 +542,33 @@ class StmtAST : public BaseAST {
       exp_only->KoopaIR();
     } else if (lval) {
       exp->KoopaIR();
-      cout << "  store " << nums.back() << ", @";
-      string ident = dynamic_cast<LValAST*>(lval.get())->ident;
-      string target_ident = get_target_ident(ident)[0];
-      if(target_ident=="") throw("undefined variable: " + ident);
-      cout << target_ident << endl;
+      string exp_save = nums.back();
       nums.pop_back();
+      auto lvalptr = dynamic_cast<LValAST*>(lval.get());
+      if (lvalptr->index_list->size()) {
+        // LVal为数组
+        for (int i = 0; i < lvalptr->index_list->size(); i++) {
+          const auto& exp_index = (*(lvalptr->index_list))[i];
+          dynamic_cast<ExpAST*>(exp_index.get())->KoopaIR();
+          cout << "  %" << current_id << " = getelemptr ";
+          if(i == 0)cout << "@" << get_target_ident(lvalptr->ident)[0];
+          else cout << nums[nums.size()-2]; // 上一个 getelemptr 的结果
+          cout << ", " << nums.back() << endl;
+          nums.pop_back();
+          if(i!=0) nums.pop_back();
+          nums.push_back("%"+to_string(current_id));
+          current_id++;
+        }
+        cout << "  store" << exp_save << ", " << nums.back() << endl;
+        nums.pop_back();
+      } else{
+        // LVal为变量
+        cout << "  store " << exp_save << ", @";
+        string ident = dynamic_cast<LValAST*>(lval.get())->ident;
+        string target_ident = get_target_ident(ident)[0];
+        if(target_ident=="") throw("undefined variable: " + ident);
+        cout << target_ident << endl;
+      }
     } else if(return_){
       if(fun_ret_flag) return;
       if(!exp)
@@ -557,23 +618,6 @@ class StmtAST : public BaseAST {
   }
   int Calculate() const override {
     return 0;
-  }
-};
-
-class ExpAST : public BaseAST {
- public:
-  unique_ptr<BaseAST> lor_exp;
-
-  void Dump() const override {
-    cout << "EXPAST { ";
-    lor_exp->Dump();
-    cout << " }";
-  }
-  void KoopaIR() const override {
-    lor_exp->KoopaIR();
-  }
-  int Calculate() const override {
-    return lor_exp->Calculate();
   }
 };
 
@@ -1063,31 +1107,66 @@ class ConstDeclAST: public BaseAST{
     }
 };
 
-class ConstDefAST: public BaseAST{
-  public:
-    string ident;
-    unique_ptr<BaseAST> const_init_val;
+// 递归打印‘数组初始化的表达式’
+// params:
+// ident: 数组的名称
+// array_init_agg: 数组的初始化值，会在各个涉及数组初始化的地方初始化好，并填充上0
+// len: 因为是递归打印，这里代表当前所在的维度的长度
+// mul_len: 因为是递归打印，这里代表当前维度之后的所有维度的长度的乘积
+// depth: 当前所在的维度
+// idx: 当前所在的维度的起始下标，相当于把多维数组展开成一维数组，idx就是这个一维数组的下标
+// format: 打印的格式，A(aggregate): 打印{x1,x2,x3,...}，S(store): 获取数组元素的指针，然后用store指令把值存进去
+static void print_array_init(const string& ident, 
+                            vector<int>* array_init_agg, 
+                            deque<int>* len, 
+                            deque<int>* mul_len, 
+                            int depth, 
+                            int idx, 
+                            char format) {
+  if (format == 'A') {
+    if(depth == len->size())
+      cout << (*array_init_agg)[idx];
+    else {
+      cout << "{";
+      int size = (*mul_len)[depth] / (*len)[depth];
+      for (int i=0; i < (*len)[depth] ;i++) {
+        print_array_init(ident, array_init_agg, len, mul_len, depth+1, idx + i*size, format);
+        if(i != (*len)[depth]-1)
+          cout << ", ";
+      }
+      cout << "}";
+    }
+  } else if (format == 'S'){
+    if(depth == len->size()) {
+      // 一维数组，不需要递归
+      cout << "  store " << (*array_init_agg)[idx] << ", %" << current_id-1 << endl;
+    } else {
+      // 多维数组，需要递归，且其中其实有“跳维”的操作，具体看下面注释
+      // 举例: a=int[2][3][4]
+      // 则mul_len = {4*3*2, 4*3, 4}, len = {2, 3, 4}
+      // step = 4*3*2/2 = 12，步长，即打印一个元素需要跳过多少个下标
+      // 我们会先从最低维开始打印，即从a[0][0][0]开始打印，打印完一维后，再打印下一维
+      // 所以会有“跳维”的操作，即打印第一轮打印的其实是a中的第0，12，24，36个元素，所以需要计算步长step
+      int step = (*mul_len)[depth] / (*len)[depth];
+      int parent_id = current_id-1;
+      // 这里不使用nums，nums的push和pop的逻辑在这里有些复杂，且nums在此处可以不用
+      for (int i=0; i < (*len)[depth] ;i++) {
+        cout << "  %" << current_id << " = getelemptr ";
+        if(depth == 0) cout << "@" << get_target_ident(ident)[0];
+        else cout <<"%"<<parent_id;
+        cout << ", " << i << endl;
+        current_id++;
+        print_array_init(ident, array_init_agg, len, mul_len, depth+1, idx + i*step, format);
+      }
+    }
+  }
+}
 
-    void Dump() const override {
-      cout << "ConstDef { ";
-      cout << ident;
-      cout << ", ";
-      const_init_val->Dump();
-      cout << " }";
-    }
-    void KoopaIR() const override {
-      string target_ident = block_stack.back() + ident ;
-      symbol_table_stack.back()->emplace(target_ident, const_init_val->Calculate());
-      symbol_type_stack.back()->emplace(target_ident, "const");
-    }
-    int Calculate() const override {
-      return 0;
-    }
-};
 
 class ConstInitValAST: public BaseAST{
   public:
     unique_ptr<BaseAST> const_exp;
+    unique_ptr<vector<unique_ptr<BaseAST>>> const_array_init_val;
 
     void Dump() const override {
       cout << "ConstInitVal { ";
@@ -1095,10 +1174,32 @@ class ConstInitValAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      // const_exp->KoopaIR();
+      return;
     }
     int Calculate() const override {
       return const_exp->Calculate();
+    }
+    // 递归聚合数组初始化的值，返回一个vector<int>，里面存放的是聚合后的数组初始化值
+    // 即使是多维数组，也可以展开成一维数组
+    vector<int> Aggregate(deque<int>::iterator len_begin,deque<int>::iterator len_end) const {
+      vector<int> array_init_agg;
+      for(auto& const_init_val : *const_array_init_val) {
+        auto child = dynamic_cast<ConstInitValAST*>(const_init_val.get());
+        if (!child->const_array_init_val) array_init_agg.push_back(child->Calculate());
+        else{
+          auto it = len_begin;
+          ++it;
+          for (; it !=  len_end; ++it) {
+            if (array_init_agg.size() % (*it) == 0) {
+              auto child_agg = child->Aggregate(it, len_end);
+              array_init_agg.insert(array_init_agg.end(), child_agg.begin(), child_agg.end());
+              break;
+            }
+          }
+        }
+      }
+      array_init_agg.insert(array_init_agg.end(), (*len_begin) - array_init_agg.size(), 0);
+      return array_init_agg;
     }
 };
 
@@ -1116,6 +1217,68 @@ class ConstExpAST: public BaseAST{
     }
     int Calculate() const override {
       return exp->Calculate();
+    }
+};
+
+class ConstDefAST: public BaseAST{
+  public:
+    string ident;
+    unique_ptr<BaseAST> const_init_val;
+    unique_ptr<vector<unique_ptr<BaseAST>>> const_index_list;
+
+    void Dump() const override {
+      cout << "ConstDef { ";
+      cout << ident;
+      cout << ", ";
+      const_init_val->Dump();
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      string target_ident = block_stack.back() + ident ;
+      if(const_index_list->size())
+      {
+        symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
+        symbol_type_stack.back()->emplace(target_ident, "const array");
+        if(symbol_table_stack.size()==1) cout<<"global "<<"@"<<target_ident<<" = alloc ";
+        else cout << "  @" << target_ident << " = alloc ";
+        for (int i = 0; i < const_index_list->size(); i++) cout << "[";
+        cout << "i32, ";
+
+        // arr[2][3][4] -> len = {2, 3, 4}, mul_len = {4*3*2, 4*3, 4}
+        auto mul_len = new deque<int>();
+        auto len = new deque<int>();
+        for (int i = const_index_list->size() - 1; i >= 0; i--){
+          const auto& const_exp = (*const_index_list)[i];
+          int tmp = dynamic_cast<ConstExpAST*>(const_exp.get())->Calculate();
+          len->push_front(tmp);
+          if(mul_len->empty()) mul_len->push_front(tmp);
+          else mul_len->push_front(mul_len->front() * tmp);
+          if(i!=0) cout << tmp << "], ";
+          else cout << tmp << "]";
+        }
+
+        vector<int> array_init_agg = dynamic_cast<ConstInitValAST*>
+          (const_init_val.get())->Aggregate(mul_len->begin(), mul_len->end());
+        if (symbol_table_stack.size() == 1) {
+          // 全局用aggregate初始化
+          cout << ", ";
+          print_array_init(ident, &array_init_agg, len, mul_len, 0, 0, 'A');
+          cout << endl;
+        } else{
+          // 局部用store指令初始化，方便目标代码生成
+          cout << endl;
+          print_array_init(ident, &array_init_agg, len, mul_len, 0, 0, 'S');
+        }
+        delete mul_len;
+        delete len;
+      }
+      else{
+        symbol_table_stack.back()->emplace(target_ident, const_init_val->Calculate());
+        symbol_type_stack.back()->emplace(target_ident, "const");
+      }
+    }
+    int Calculate() const override {
+      return 0;
     }
 };
 
@@ -1137,46 +1300,10 @@ class VarDeclAST: public BaseAST{
     }
 };
 
-class VarDefAST: public BaseAST{
-  public:
-    string ident;
-    unique_ptr<BaseAST> init_val;
-
-    void Dump() const override {
-      cout << "VarDef { ";
-      cout << ident;
-      cout << ", ";
-      if(init_val){
-        init_val->Dump();
-      }
-      cout << " }";
-    }
-    void KoopaIR() const override {
-      string target_ident = block_stack.back() + ident ;
-      if(symbol_table_stack.size()==1) cout<<"global "<<"@"<<target_ident<<" = alloc i32, ";
-      else cout << "  @" << target_ident << " = alloc i32";
-      symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
-      symbol_type_stack.back()->emplace(target_ident, "var");
-      if(symbol_table_stack.size()==1){
-        if(init_val) cout << init_val->Calculate() << endl;
-        else cout<<"zeroinit"<<endl;
-      }
-      else{
-          if(init_val) {
-          init_val->KoopaIR();
-          cout << "  store " << nums.back() << ", @" << target_ident << endl;
-          nums.pop_back();
-        }
-      }
-    }
-    int Calculate() const override {
-      return 0;
-    }
-};
-
 class InitValAST: public BaseAST{
   public:
     unique_ptr<BaseAST> exp;
+    unique_ptr<vector<unique_ptr<BaseAST>>> array_init_val;
 
     void Dump() const override {
       cout << "InitVal { ";
@@ -1189,4 +1316,140 @@ class InitValAST: public BaseAST{
     int Calculate() const override {
       return exp->Calculate();
     }
+    vector<int> Aggregate(deque<int>::iterator mul_len_begin,deque<int>::iterator mul_len_end) const {
+      if(symbol_table_stack.size()==1) {
+        // 全局数组变量的初始化列表中只能出现常量表达式, 返回的 array_init_agg 即为各项的值
+        vector<int> array_init_agg;
+        for(auto& init_val : *array_init_val) {
+          auto child = dynamic_cast<InitValAST*>(init_val.get());
+          if (!child->array_init_val) {
+            array_init_agg.push_back(child->Calculate());
+          } else{
+            auto it = mul_len_begin;
+            ++it;
+            for (; it !=  mul_len_end; ++it) {
+              if (array_init_agg.size() % (*it) == 0) {
+                auto child_agg = child->Aggregate(it, mul_len_end);
+                array_init_agg.insert(array_init_agg.end(), child_agg.begin(), child_agg.end());
+                break;
+              }
+            }
+          }
+        }
+        array_init_agg.insert(array_init_agg.end(), (*mul_len_begin) - array_init_agg.size(), 0);
+        return array_init_agg;
+      }
+      else {
+        // 局部数组变量的初始化列表中可以出现任何表达式, 返回的 array_init_agg 为各项的 KoopaIR Symbol 编号
+        // 若编号为 -1, 则对应的值为 0
+        vector<int> array_init_agg;
+        for(auto& init_val : *array_init_val) {
+          auto child = dynamic_cast<InitValAST*>(init_val.get());
+          if (!child->array_init_val) {
+            child->KoopaIR();
+            array_init_agg.push_back(stoi(nums.back()));
+            nums.pop_back();
+          } else{
+            auto it = mul_len_begin;
+            ++it;
+            for (; it !=  mul_len_end; ++it) {
+              if (array_init_agg.size() % (*it) == 0) {
+                auto child_agg = child->Aggregate(it, mul_len_end);
+                array_init_agg.insert(array_init_agg.end(), child_agg.begin(), child_agg.end());
+                break;
+              }
+            }
+          }
+        }
+        // cout<<"array_init_agg.size()="<<array_init_agg.size()<<endl;
+        array_init_agg.insert(array_init_agg.end(), (*mul_len_begin) - array_init_agg.size(), 0);
+        return array_init_agg;
+    }
+}
 };
+
+class VarDefAST: public BaseAST{
+  public:
+    string ident;
+    unique_ptr<BaseAST> init_val;
+    unique_ptr<vector<unique_ptr<BaseAST>>> const_index_list;
+
+    void Dump() const override {
+      cout << "VarDef { ";
+      cout << ident;
+      cout << ", ";
+      if(init_val){
+        init_val->Dump();
+      }
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      if(const_index_list->size()){
+        // 数组
+        string target_ident = block_stack.back() + ident ;
+        symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
+        symbol_type_stack.back()->emplace(target_ident, "array");
+        if(symbol_table_stack.size()==1) cout<<"global "<<"@"<<target_ident<<" = alloc ";
+        else cout << "  @" << target_ident << " = alloc ";
+        for (int i = 0; i < const_index_list->size(); i++) cout << "[";
+        cout << "i32, ";
+
+        auto mul_len = new deque<int>();
+        auto len = new deque<int>();
+        for (int i = const_index_list->size() - 1; i >= 0; i--) {
+          const auto& const_exp = (*const_index_list)[i];
+          int tmp = dynamic_cast<ConstExpAST*>(const_exp.get())->Calculate();
+          len->push_front(tmp);
+          if(mul_len->empty()) mul_len->push_front(tmp);
+          else mul_len->push_front(mul_len->front() * tmp);
+          if(i!=0) cout << tmp << "], ";
+          else cout << tmp << "]";
+        }
+
+        if(symbol_table_stack.size()==1){
+          // 全局
+          if(init_val){
+            vector<int> array_init_agg = 
+              dynamic_cast<InitValAST*>(init_val.get())->Aggregate(mul_len->begin(), mul_len->end());
+            cout << ", ";
+            print_array_init(ident, &array_init_agg, len, mul_len, 0, 0, 'A');
+            cout << endl;
+          }
+          else cout<<", zeroinit"<<endl;
+        } else{
+          // 局部
+          cout<<endl;
+          if(init_val) {
+            vector<int> array_init_agg = 
+              dynamic_cast<InitValAST*>(init_val.get())->Aggregate(mul_len->begin(), mul_len->end());
+            print_array_init(ident, &array_init_agg, len, mul_len, 0, 0, 'S');
+          };
+          // 如果没有init_val，局部数组先不进行处理，不打印zeroinit，这是为了之后方便生成目标代码
+        }
+        delete mul_len;
+        delete len;
+      } else{
+        // 变量
+        string target_ident = block_stack.back() + ident ;
+        if(symbol_table_stack.size()==1) cout<<"global "<<"@"<<target_ident<<" = alloc i32, ";
+        else cout << "  @" << target_ident << " = alloc i32";
+        symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
+        symbol_type_stack.back()->emplace(target_ident, "var");
+        if(symbol_table_stack.size()==1){
+          if(init_val) cout << init_val->Calculate() << endl;
+          else cout<<"zeroinit"<<endl;
+        }
+        else{
+          if(init_val) {
+          init_val->KoopaIR();
+          cout << "  store " << nums.back() << ", @" << target_ident << endl;
+          nums.pop_back();
+          } else cout<<endl;
+        }
+      }
+    }
+    int Calculate() const override {
+      return 0;
+    }
+};
+

@@ -59,6 +59,8 @@ using namespace std;
 
 %type <ast_val> CompUnitItem FuncFParam
 
+%type <vec_val> ConstIndexList ConstArrayInitVal ConstInitValList ArrayInitVal IndexList InitValList
+
 
 %%
 
@@ -282,10 +284,23 @@ Exp
   ;
 
 LVal
-  : IDENT{
+  : IDENT IndexList {
     auto ast = new LValAST();
     ast->ident = *unique_ptr<string>($1);
+    ast->index_list = unique_ptr<vector<unique_ptr<BaseAST>>>($2);
     $$ = ast;
+  }
+  ;
+
+IndexList
+  : {
+    auto vec = new vector<unique_ptr<BaseAST>>();
+    $$ = vec;
+  }
+  | IndexList '[' Exp ']' {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
   }
   ;
 
@@ -510,11 +525,24 @@ ConstDefList
   ;
 
 ConstDef
-  : IDENT '=' ConstInitVal{
+  : IDENT ConstIndexList '=' ConstInitVal{
     auto ast = new ConstDefAST();
     ast->ident = *unique_ptr<string>($1);
-    ast->const_init_val = unique_ptr<BaseAST>($3);
+    ast->const_index_list = unique_ptr<vector<unique_ptr<BaseAST>>>($2);
+    ast->const_init_val = unique_ptr<BaseAST>($4);
     $$ = ast;
+  }
+  ;
+
+ConstIndexList
+  : {
+    auto vec = new vector<unique_ptr<BaseAST>>();
+    $$ = vec;
+  }
+  | ConstIndexList '[' ConstExp ']' {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = $1;
   }
   ;
 
@@ -523,6 +551,35 @@ ConstInitVal
     auto ast = new ConstInitValAST();
     ast->const_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
+  }
+  | ConstArrayInitVal{
+    auto ast = new ConstInitValAST();
+    ast->const_array_init_val = unique_ptr<vector<unique_ptr<BaseAST>>>($1);
+    $$ = ast;
+  }
+  ;
+
+ConstArrayInitVal
+  : '{' '}'{
+    auto vec = new vector<unique_ptr<BaseAST>>();
+    $$ = vec;
+  }
+  | '{' ConstInitValList '}'{
+    auto vec = $2;
+    $$ = vec;
+  }
+  ;
+
+ConstInitValList
+  : ConstInitVal{
+    auto vec = new vector<unique_ptr<BaseAST>>();
+    vec->push_back(unique_ptr<BaseAST>($1));
+    $$ = vec;
+  }
+  | ConstInitValList ',' ConstInitVal{
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
   }
   ;
 
@@ -557,15 +614,17 @@ VarDefList
   ;
 
 VarDef
-  : IDENT{
+  : IDENT ConstIndexList{
     auto ast = new VarDefAST();
     ast->ident = *unique_ptr<string>($1);
+    ast->const_index_list = unique_ptr<vector<unique_ptr<BaseAST>>>($2);
     $$ = ast;
   }
-  | IDENT '=' InitVal{
+  | IDENT ConstIndexList '=' InitVal{
     auto ast = new VarDefAST();
     ast->ident = *unique_ptr<string>($1);
-    ast->init_val = unique_ptr<BaseAST>($3);
+    ast->const_index_list = unique_ptr<vector<unique_ptr<BaseAST>>>($2);
+    ast->init_val = unique_ptr<BaseAST>($4);
     $$ = ast;
   }
   ;
@@ -575,6 +634,35 @@ InitVal
     auto ast = new InitValAST();
     ast->exp = unique_ptr<BaseAST>($1);
     $$ = ast;
+  }
+  | ArrayInitVal{
+    auto ast = new InitValAST();
+    ast->array_init_val = unique_ptr<vector<unique_ptr<BaseAST>>>($1);
+    $$ = ast;
+  }
+  ;
+
+ArrayInitVal
+  : '{' '}'{
+    auto vec = new vector<unique_ptr<BaseAST>>();
+    $$ = vec;
+  }
+  | '{' InitValList '}'{
+    auto vec = $2;
+    $$ = vec;
+  }
+  ;
+
+InitValList
+  : InitVal{
+    auto vec = new vector<unique_ptr<BaseAST>>();
+    vec->push_back(unique_ptr<BaseAST>($1));
+    $$ = vec;
+  }
+  | InitValList ',' InitVal{
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
   }
   ;
 
