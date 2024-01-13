@@ -148,6 +148,13 @@ FuncFParam
     ast->ident = *unique_ptr<string>($2);
     $$ = ast;
   }
+  | TYPE IDENT '[' ']' ConstIndexList {
+    auto ast = new FuncFParamAST();
+    ast->b_type = *unique_ptr<string>($1);
+    ast->ident = *unique_ptr<string>($2);
+    ast->const_index_list = unique_ptr<vector<unique_ptr<BaseAST>>>($5);
+    $$ = ast;
+  }
   ;
 
 Block

@@ -199,25 +199,72 @@ class CompUnitItemAST : public BaseAST {
   }
 };
 
+class ConstExpAST: public BaseAST{
+  public:
+    unique_ptr<BaseAST> exp;
+
+    void Dump() const override {
+      cout << "ConstExp { ";
+      exp->Dump();
+      cout << " }";
+    }
+    void KoopaIR() const override {
+      exp->KoopaIR();
+    }
+    int Calculate() const override {
+      return exp->Calculate();
+    }
+};
+
 class FuncFParamAST : public BaseAST {
  public:
   string b_type;
   string ident;
+  unique_ptr<vector<unique_ptr<BaseAST>>> const_index_list;
 
   void Dump() const override {
     return;
   }
   void KoopaIR() const override {
-    cout << "@" << ident << ": i32";
+    if(const_index_list){
+      cout << "@" << ident << ": *";
+      for (int i = 0; i < const_index_list->size(); i++) cout<<"[";
+      cout<<"i32";
+      if(const_index_list->size()) cout<<", ";
+      for (int i = const_index_list->size() - 1; i >= 0; i--) {
+        const auto& const_exp = (*const_index_list)[i];
+        int num = dynamic_cast<ConstExpAST*>(const_exp.get())->Calculate();
+        if(i) cout<<std::to_string(num) + "], ";
+        else cout<<std::to_string(num)+"]";
+      }
+    } else cout << "@" << ident << ": i32";
   }
   int Calculate() const override {
     return 0;
   }
   void Alloc() const {
     string target_ident = block_stack.back() + ident ;
-    cout << "  @" << target_ident << " = alloc i32" << endl;
-    symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
-    symbol_type_stack.back()->emplace(target_ident, "var");
+    if(const_index_list){
+      cout<<"  @"<<target_ident<<" = alloc *";
+      for (int i = 0; i < const_index_list->size(); i++) cout<<"[";
+      cout<<"i32";
+      if(const_index_list->size()) cout<<", ";
+      for (int i = const_index_list->size() - 1; i >= 0; i--) {
+        const auto& const_exp = (*const_index_list)[i];
+        int num = dynamic_cast<ConstExpAST*>(const_exp.get())->Calculate();
+        if(i) cout<<std::to_string(num) + "], ";
+        else cout<<std::to_string(num)+"]";
+      }
+      cout<<endl;
+      // 这里符号表里存放的是数组有几个维度，如 arr*[2][3] -> 3，以在Stmt和Lval中部分解引用数组
+      // 注意这里是*，即数组指针，所以要加1
+      symbol_table_stack.back()->emplace(target_ident, const_index_list->size()+1); 
+      symbol_type_stack.back()->emplace(target_ident, "ptr"); // 指针类型
+    } else{
+      cout << "  @" << target_ident << " = alloc i32" << endl;
+      symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
+      symbol_type_stack.back()->emplace(target_ident, "var");
+    }
     cout<<"  store @"<<ident<<", @"<<target_ident<<endl;
   }
 };
@@ -314,7 +361,10 @@ class LValAST: public BaseAST{
       cout << " }";
     }
     void KoopaIR() const override {
-      if(index_list->size()){
+      string target_ident = get_target_ident(ident)[0];
+      string target_type = get_target_ident(ident)[1];
+      string target_value = get_target_ident(ident)[2];
+      if(target_type=="array"||target_type=="const array"){
         // 数组
         for (int i = 0; i < index_list->size(); i++) {
           const auto& exp_index = (*index_list)[i];
@@ -328,25 +378,57 @@ class LValAST: public BaseAST{
           nums.push_back("%"+to_string(current_id));
           current_id++;
         }
-        cout << "  %" << current_id << " = load " << nums.back() << endl;
+        if(index_list->size()==0)
+        {
+          cout << "  %" << current_id << " = getelemptr @" << target_ident << ", 0" << endl;
+          nums.push_back("%"+to_string(current_id));
+          current_id++;
+          return ;
+        }
+        if(stoi(target_value)!=index_list->size())
+          cout << "  %" << current_id << " = getelemptr " << nums.back() << ", 0" << endl;
+        else
+          cout << "  %" << current_id << " = load " << nums.back() << endl;
         nums.pop_back();
         nums.push_back("%"+to_string(current_id));
         current_id++;
-      } else {
+      } else if(target_type=="var"||target_type=="const"){
         // 变量
-        string target_ident = get_target_ident(ident)[0];
-        string target_type = get_target_ident(ident)[1];
-        string target_value = get_target_ident(ident)[2];
         if(target_ident=="") throw("undefined variable: " + ident);
-        if(target_type=="const"){
-          nums.push_back(target_value);
-        }
+        if(target_type=="const") nums.push_back(target_value);
         else{
           cout << "  %"<< current_id << " = load @" << target_ident << endl;
           nums.push_back("%"+to_string(current_id));
           current_id++;
         }
-      }
+      } else if(target_type=="ptr"){
+        // 指针
+        cout << "  %"<< current_id << " = load @" << target_ident << endl;
+        current_id++;
+        for (int i = 0; i<index_list->size(); i++) {
+          int lastptr_current_id = current_id-1;
+          const auto& exp_index = (*index_list)[i];
+          dynamic_cast<ExpAST*>(exp_index.get())->KoopaIR();
+          if(i==0) std::cout << "  %" << current_id << " = getptr %";
+          else std::cout << "  %" << current_id << " = getelemptr %";
+          std::cout << lastptr_current_id << ", " << nums.back() << std::endl;
+          nums.pop_back();
+          current_id++;
+        }
+        if(index_list->size()==0)
+        {
+          cout << "  %" << current_id << " = getptr %" << current_id-1 << ", 0" << endl;
+          nums.push_back("%"+to_string(current_id));
+          current_id++;
+          return ;
+        }
+        if(stoi(target_value)!=index_list->size())
+          std::cout << "  %" << current_id << " = getelemptr %" << current_id-1 << ", 0" << std::endl;
+        else
+          std::cout << "  %" << current_id << " = load %" << current_id-1 << std::endl;
+        nums.push_back("%"+to_string(current_id));
+        current_id++;
+      } else throw("In LVal undefined variable type: " + target_type);
     }
     int Calculate() const override {
       return symbol_table_stack.back()->at(get_target_ident(ident)[0]);
@@ -544,14 +626,17 @@ class StmtAST : public BaseAST {
       exp->KoopaIR();
       string exp_save = nums.back();
       nums.pop_back();
-      auto lvalptr = dynamic_cast<LValAST*>(lval.get());
-      if (lvalptr->index_list->size()) {
+      auto lval_ptr = dynamic_cast<LValAST*>(lval.get());
+      string ident = lval_ptr->ident;
+      string target_ident = get_target_ident(ident)[0];
+      string target_type = get_target_ident(ident)[1];
+      if (target_type=="array" || target_type=="const array") {
         // LVal为数组
-        for (int i = 0; i < lvalptr->index_list->size(); i++) {
-          const auto& exp_index = (*(lvalptr->index_list))[i];
+        for (int i = 0; i < lval_ptr->index_list->size(); i++) {
+          const auto& exp_index = (*(lval_ptr->index_list))[i];
           dynamic_cast<ExpAST*>(exp_index.get())->KoopaIR();
           cout << "  %" << current_id << " = getelemptr ";
-          if(i == 0)cout << "@" << get_target_ident(lvalptr->ident)[0];
+          if(i == 0)cout << "@" << get_target_ident(lval_ptr->ident)[0];
           else cout << nums[nums.size()-2]; // 上一个 getelemptr 的结果
           cout << ", " << nums.back() << endl;
           nums.pop_back();
@@ -559,16 +644,30 @@ class StmtAST : public BaseAST {
           nums.push_back("%"+to_string(current_id));
           current_id++;
         }
-        cout << "  store" << exp_save << ", " << nums.back() << endl;
+        cout << "  store " << exp_save << ", " << nums.back() << endl;
         nums.pop_back();
-      } else{
+      } else if(target_type=="var" || target_type=="const"){
         // LVal为变量
         cout << "  store " << exp_save << ", @";
-        string ident = dynamic_cast<LValAST*>(lval.get())->ident;
-        string target_ident = get_target_ident(ident)[0];
         if(target_ident=="") throw("undefined variable: " + ident);
         cout << target_ident << endl;
-      }
+      } else if (target_type=="ptr"){
+        std::cout << "  %" << current_id << " = load @" << target_ident << std::endl;
+        current_id++;
+        for (int i = 0; i<lval_ptr->index_list->size(); i++) {
+          int lastptr_current_id = current_id-1;
+          const auto& exp_index = (*(lval_ptr->index_list))[i];
+          dynamic_cast<ExpAST*>(exp_index.get())->KoopaIR();
+          if(i==0)
+            std::cout << "  %" << current_id << " = getptr %";
+          else
+            std::cout << "  %" << current_id << " = getelemptr %";
+          std::cout << lastptr_current_id << ", " << nums.back() << std::endl;
+          nums.pop_back();
+          current_id++;
+        }
+        std::cout << "  store " << exp_save << ", %" << current_id-1 << std::endl;
+      } else throw("In Stmt undefined variable type: " + target_type);
     } else if(return_){
       if(fun_ret_flag) return;
       if(!exp)
@@ -1203,23 +1302,6 @@ class ConstInitValAST: public BaseAST{
     }
 };
 
-class ConstExpAST: public BaseAST{
-  public:
-    unique_ptr<BaseAST> exp;
-
-    void Dump() const override {
-      cout << "ConstExp { ";
-      exp->Dump();
-      cout << " }";
-    }
-    void KoopaIR() const override {
-      exp->KoopaIR();
-    }
-    int Calculate() const override {
-      return exp->Calculate();
-    }
-};
-
 class ConstDefAST: public BaseAST{
   public:
     string ident;
@@ -1237,12 +1319,15 @@ class ConstDefAST: public BaseAST{
       string target_ident = block_stack.back() + ident ;
       if(const_index_list->size())
       {
-        symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
+        // 数组
+        // 这里符号表里存放的是数组有几个维度，如 arr[2][3][4] -> 3，以在Stmt和Lval中部分解引用数组
+        symbol_table_stack.back()->emplace(target_ident, const_index_list->size());
         symbol_type_stack.back()->emplace(target_ident, "const array");
         if(symbol_table_stack.size()==1) cout<<"global "<<"@"<<target_ident<<" = alloc ";
         else cout << "  @" << target_ident << " = alloc ";
         for (int i = 0; i < const_index_list->size(); i++) cout << "[";
-        cout << "i32, ";
+        cout << "i32";
+        if(const_index_list->size()) cout << ", ";
 
         // arr[2][3][4] -> len = {2, 3, 4}, mul_len = {4*3*2, 4*3, 4}
         auto mul_len = new deque<int>();
@@ -1273,6 +1358,7 @@ class ConstDefAST: public BaseAST{
         delete len;
       }
       else{
+        // 常量
         symbol_table_stack.back()->emplace(target_ident, const_init_val->Calculate());
         symbol_type_stack.back()->emplace(target_ident, "const");
       }
@@ -1387,12 +1473,14 @@ class VarDefAST: public BaseAST{
       if(const_index_list->size()){
         // 数组
         string target_ident = block_stack.back() + ident ;
-        symbol_table_stack.back()->emplace(target_ident, 1); // 这里随便给的值，因为不会用到
+        // 这里符号表里存放的是数组有几个维度，如 arr[2][3][4] -> 3，以在Stmt和Lval中部分解引用数组
+        symbol_table_stack.back()->emplace(target_ident, const_index_list->size());
         symbol_type_stack.back()->emplace(target_ident, "array");
         if(symbol_table_stack.size()==1) cout<<"global "<<"@"<<target_ident<<" = alloc ";
         else cout << "  @" << target_ident << " = alloc ";
         for (int i = 0; i < const_index_list->size(); i++) cout << "[";
-        cout << "i32, ";
+        cout << "i32";
+        if(const_index_list->size()) cout << ", ";
 
         auto mul_len = new deque<int>();
         auto len = new deque<int>();
